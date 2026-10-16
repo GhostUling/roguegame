@@ -28,6 +28,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
               src/game/{enemyTypes,upgrades,codexData}.ts
 工厂层       src/game/player.ts        开局玩家状态构造（合体属性在这里算）
 规则层       src/game/pilots.ts        双机编队、副机属性换算
+              src/game/drones.ts        无人机射速/伤害算式（引擎与 UI 共用）
               src/game/resonanceArc.ts 共鸣电弧绘制
 渲染层       src/game/render/renderer.ts  只读 RenderState，输出到 Canvas
 ```
@@ -47,6 +48,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `upgrades.ts` | 25 条强化：文案、稀有度、`apply(player)`、上限 | 图鉴的额外解说（在 codexData） |
 | `player.ts` | `createPlayer`：把选定机体（单机或双机）折算成初始 `Player` | 逐帧状态变更 |
 | `pilots.ts` | `hasPilot` / `getTwinPositions` / `getPilotWeaponStats` | 引擎状态读写、模式判定（在 modes） |
+| `drones.ts` | 无人机/护卫/轨道炮的射速与伤害算式：`interceptorInterval`、`interceptorShotDamage`、`railgunShotDamage` 等 | 逐帧状态（在 engine） |
 | `resonanceArc.ts` | `drawResonanceArc`，双机之间的电弧，游戏内与选人预览共用 | 机体造型（在 characters） |
 | `audio.ts` | Web Audio 程序化音效 | 播放时机判断（由引擎调用） |
 | `joystick.ts` | 触摸摇杆，暴露归一化 `vector` | — |
@@ -84,6 +86,8 @@ requestAnimationFrame
 | 模式的旋钮（出怪倍率、成长系数、血条合并…） | `game/modes.ts` |
 | 开局初始状态折算 | `game/player.ts` |
 | 双机编队规则、副机数值换算 | `game/pilots.ts` |
+| 无人机射速、弹道伤害算式 | `game/drones.ts` |
+| 强化逐级数值（冷却/半径/阈值…） | `game/upgrades.ts` 顶部的 `LVL_*` 表 |
 | 战斗流程、AI、碰撞、掉落 | `game/engine.ts` |
 | 画面表现 | `game/render/renderer.ts` |
 | 某个界面长什么样 | `components/` 下对应组件 |
@@ -115,9 +119,14 @@ requestAnimationFrame
 对照检查：全仓库 `grep -rn "twin_link" src` 应该只剩 `types.ts` 的联合类型、`modes.ts` 的表与判定、以及测试里的构造调用。出现别处就是漏改了。
 
 ### 加一条强化
-1. `upgrades.ts` 加一条（`statDiffText` 与 `apply` 都要写）
-2. `codexData.ts` 若需要图鉴专属文案，补上对应 key
-3. 强化只改 `player` 字段即可，双子模式会自动分摊到两机
+1. `upgrades.ts` 加一条。`apply(player, lvl)` 的 **`lvl` 是本次授予的等级**（`App.tsx` 在自增前算好传入，`getRandomUpgrades` 的 wrapper 原样转发）——所以**上位等级必须真的产生效果**。
+2. 数值怎么放，取决于效果能不能用相对倍率表达：
+   - **能**（`damage`、`fire_rate`、`speed`、`magnet`、`shield`…）：直接对 player 字段做乘/加，多级自然叠加，`lvl` 用不到。
+   - **不能**（冷却、半径、数量、阈值、目标数这类）：在文件顶部的 `LVL_*` 区加一张逐级表，`apply` 与 `statDiffText` **都从这张表读**，别写第二份。
+3. `types.ts` 的 `Player` 加上对应字段（如 `naniteShieldCooldown`），基值写在 `player.ts` 的 `createPlayer` 里，引擎只读字段、不写常量。
+4. `codexData.ts` 补上 `levels`（**条数必须等于 `maxLevel`**，`codex.test.ts` 会拦）与 `synergies`（`targetKey` 必须真实存在）。
+5. `upgrades.test.ts` 里 `it('changes the player state on each and every rung')` 会自动覆盖新强化：**任何一级没改变 player 状态就会失败**。数值型的再补一条阶梯断言。
+6. 强化只改 `player` 字段即可，双子模式会自动分摊到两机。
 
 ### 加一种敌人
 1. `types.ts` 的 `EnemyType` 联合类型加一项
@@ -134,11 +143,14 @@ requestAnimationFrame
 - [ ] 改了画面/手感/引擎循环：在浏览器里实际玩一遍标准模式与双子模式（**由人来做，助手不要自己去点浏览器**）
 - [ ] 没有留下死代码、注释掉的旧实现、未使用的导出
 - [ ] 新增数值进了数据表，而不是散落在逻辑里
+- [ ] 改了数值：回头对一遍 `codexData.ts` 对应等级的文案（那里的数字是手写的）
 - [ ] 提交信息是 Conventional Commits，正文写「为什么」
 
 ## 已知技术债
 
-1. **`codexData.ts` 与 `upgrades.ts` 双份真值** —— 同一条强化的名称与描述存了两处，改一处漏一处会让图鉴与实战数值漂移。建议在新增强化之前先合并。
-2. **`engine.ts` 仍是单体编排类** —— 敌人 AI 状态机、碰撞、掉落仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`modes.ts`）、玩家构造（`player.ts`）做过拆分，后续若继续拆分，建议顺序：敌人 AI → 碰撞/伤害 → 掉落与经验。
-3. **测试覆盖不全** —— 只覆盖纯函数模块（数值表、属性换算、模式旋钮，`npm test`）。引擎循环与渲染需要 canvas，仍只能靠手玩。
-4. **3× 倍速下单帧步长最大 0.24s** —— 位移约 63px/帧，极快的敌人理论上可能穿过碰撞判定。若要消除需引入子步进。
+1. **图鉴承诺了、引擎里没有的行为** —— 4 组：`cluster_bombs` 3 级「连锁破片殉爆」、`summon_railgun` 3 级「持续 1 秒的高温电浆裂隙」、`drone_missiles` 3 级「持续范围燃烧震波」、`drone_overclock` 的「无人机命中附加 20% 易伤 / 牺牲飞梭抵挡致命伤 / 12 秒自动重生」。目前这些等级只做到纯数值提升。补齐需要新增持续伤害区、替死判定、重生计时之类的系统——**是加功能，不是修 bug**；动手前先决定补齐还是收敛文案。
+2. **图鉴逐级文案里的数字是手写散文** —— `levels[].description` 的绝对数值不由 `upgrades.ts` 的数值表推导，改数值时可能在文案里留下假的数字（已修过 fire_rate 的 250ms 基准、shield 的自愈数值、critical_core 的倍率上限、railgun 的 3.2s、nova 的 2.5s 共 5 处）。
+3. **`engine.ts` 仍是单体编排类** —— 敌人 AI 状态机、碰撞、掉落仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`modes.ts`）、玩家构造（`player.ts`）、无人机算式（`drones.ts`）做过拆分，后续若继续拆分，建议顺序：敌人 AI → 碰撞/伤害 → 掉落与经验。
+4. **测试覆盖不全** —— 只覆盖纯函数模块（`npm test`）。引擎循环与渲染需要 canvas，仍只能靠手玩。
+5. **`PauseModal` 残留硬编码** —— 如轨道炮「贯穿 5 敌」的 5 与引擎里的 `pierce: 5` 是两份。无人机算式已收进 `drones.ts` 共用，同类数字遇到就顺手收拢。
+6. **3× 倍速下单帧步长最大 0.24s** —— 位移约 63px/帧，极快的敌人理论上可能穿过碰撞判定。若要消除需引入子步进。
