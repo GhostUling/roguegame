@@ -1,0 +1,68 @@
+# AGENTS.md
+
+几何超载（Geometric Overload）——纯几何肉鸽割草生存。Vite + React + TypeScript，无外部美术资源，所有图形由 Canvas 2D 程序化绘制。
+
+本文件是给编码助手（以及人）看的硬约束。改代码前先读完，改完必须满足「验证门」。
+
+## 验证门（每次改动都必须过）
+
+```bash
+npm run lint    # tsc --noEmit，必须 0 错
+npm run build   # vite build，必须成功
+npm test        # vitest，必须全绿
+```
+
+三绿之前不要声称完成。涉及画面或手感的改动，还要在 `npm run dev`（端口 3000）里实际玩一遍确认——**这一步由人来做，编码助手不要自己去点浏览器**。
+
+## 硬约束
+
+1. **不允许留下半成品。** 这是本仓库出现过的最严重问题：`weapons.ts` / `lab.ts` / `LabModal.tsx` / `ChestModal.tsx` 共 670 行死代码，引用 `types.ts` 里根本不存在的类型，导致 `npm run lint` 长期失败——真正的错误因此被淹没。做不到就回退，不要提交引用了不存在符号的文件。
+
+2. **删功能要连文件一起删。** 不要注释掉旧实现，不要留 `// removed`。git 会替你记住。
+
+3. **数值只写一处。** 敌人属性 → `src/game/enemyTypes.ts`；机体 → `src/game/characters/<机体>.ts`；强化 → `src/game/upgrades.ts`；模式差异 → `src/game/modes.ts`。新增敌人 = 表里加一行，不要写 if-else 分支。发现自己要在两个文件改同一个数值，就是设计错了。
+
+4. **加内容前先查清单。** `docs/CONTRIBUTING.md` 有「改动落在哪个文件」速查表，以及加机体 / 加强化 / 加敌人 / **加模式**四份逐文件清单。四类里只有加模式还需要动多处（模式的表现部分），必须照着走。
+
+5. **UI 不许重新推导游戏规则。** HUD / Modal 只能展示引擎或共享模块算出来的值。历史上 `PauseModal` 自己算过 carrier 倍率和无人机 DPS，引擎改判定后它就悄悄错了。需要什么就导出纯函数（见约束 6）。
+
+6. **共享规则放纯函数模块。** 模式旋钮与 `isPaired` 在 `src/game/modes.ts`；双机编队与副机属性换算在 `src/game/pilots.ts`；机体几何外观与共鸣电弧在 `src/game/characters/` 与 `src/game/resonanceArc.ts`（引擎与选人界面共用一份）。禁止在两个地方各写一遍同样的规则。
+
+7. **渲染只读。** `src/game/render/renderer.ts` 只能通过 `RenderState` 读取状态，不得修改任何游戏状态、不得 push 数组，也不要判断模式字符串（靠 `getTwinPositions` 在单机时自然退化）。要画新东西就给 `RenderState` 加字段。
+
+8. **引擎是唯一状态源。** 不要在 React 组件里保存游戏状态副本并回写引擎；`App.tsx` 只做状态机与传参。
+
+9. **提交信息用 Conventional Commits**（`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`），正文说明「为什么」。不要加 AI 署名尾巴。
+
+## 目录速查
+
+```
+src/
+  App.tsx                 状态机 + 引擎/UI 编排
+  components/             UI 层（7 个界面/弹窗），不算游戏规则
+  game/
+    engine.ts             编排层：状态 + update 流水线
+    render/renderer.ts    全部绘制，只读 RenderState
+    types.ts              共享类型
+    modes.ts              游戏模式描述表（模式差异的唯一来源）
+    characters/           6 台机体，一台一个文件（数值 + 外观）
+      index.ts              聚合 CHARACTERS / getCharacterDef / drawCharacterShip
+      shipDraw.ts           机体绘制共用画笔（线宽单位、机头）
+    enemyTypes.ts         7 种敌人数据表 + 波次表
+    upgrades.ts           25 条强化数据表
+    player.ts             开局玩家状态构造（合体属性在这里算）
+    pilots.ts             双机编队 / 副机属性换算
+    resonanceArc.ts       双子共鸣电弧绘制
+    codexData.ts          图鉴文案（注意：与 upgrades 存在双份真值，见技术债）
+    audio.ts              程序化音效
+    joystick.ts           触摸摇杆
+  **/*.test.ts            纯函数模块的行为测试（vitest，node 环境）
+```
+
+## 已知技术债
+
+- `codexData.ts` 与 `upgrades.ts` 对同一条强化的文案各存一份，改一处需同步另一处。**新增第 26 条强化之前应先合并数据源。**
+- `engine.ts` 仍是单个约 2000 行编排类，敌人 AI 状态机、碰撞、掉落都在里面，尚未按域拆分。
+- 测试只覆盖纯函数模块（数值表、换算、模式旋钮）。`engine.ts` 的循环与 `renderer.ts` 需要 canvas，仍无自动化回归，只能靠手玩。
+
+详细说明（数据流、常见修改任务清单）见 `docs/CONTRIBUTING.md`。
