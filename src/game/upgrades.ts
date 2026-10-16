@@ -9,8 +9,52 @@ export interface UpgradeDefinition {
   category: UpgradeCategory;
   rarity: UpgradeRarity;
   maxLevel: number;
-  statDiffText: (player: Player, currentLvl: number) => string;
+  statDiffText: (player: Player, currentLvl?: number) => string;
   apply: (player: Player, currentLvl: number) => void;
+}
+
+/**
+ * Picks the value for a level from a per-level table. The level is passed in by
+ * the caller, so a multi-level upgrade keeps scaling past level 1 — a lone
+ * boolean flag would make every level above the first a no-op.
+ */
+function atLevel<T>(table: T[], level: number): T {
+  return table[Math.min(table.length, Math.max(1, level)) - 1];
+}
+
+// Per-level tables for the upgrades that keep scaling past level 1.
+// apply() writes these values onto the player and statDiffText() previews them,
+// so the card and the actual effect can never disagree.
+const LVL_CLUSTER_FRAGMENTS = [3, 3, 4];
+const LVL_CLUSTER_DMG = [0.4, 0.6, 0.6];
+const LVL_CRYO_SLOW = [0.65, 0.55, 0.45];
+const LVL_CRYO_VULN = [0.2, 0.3, 0.4];
+const LVL_CHAIN_TARGETS = [3, 4, 5];
+const LVL_CHAIN_DMG = [0.6, 0.84, 0.84];
+const LVL_CHAIN_STUN = [0, 0, 0.35];
+const LVL_REPULSE_INTERVAL = [6.0, 4.5, 3.0];
+const LVL_REPULSE_RADIUS = [160, 200, 200];
+const LVL_THORN_COUNT = [8, 12, 16];
+const LVL_THORN_DMG = [0.9, 1.35, 1.35];
+const LVL_THORN_PIERCE = [2, 3, 3];
+const LVL_NANITE_COOLDOWN = [4.0, 3.2, 2.5];
+const LVL_NANITE_WAVE = [80, 80, 200];
+const LVL_MISSILE_INTERVAL = [2400, 2400, 1800];
+const LVL_MISSILE_DMG = [1.5, 2.1, 2.1];
+const LVL_DSHIELD_REDUCTION = [0.15, 0.25, 0.35];
+const LVL_DSHIELD_SPIN = [1.0, 1.35, 1.35];
+const LVL_RAILGUN_INTERVAL = [3400, 2500, 1800];
+const LVL_RAILGUN_DMG = [2.8, 4.2, 4.2];
+const LVL_RAILGUN_WIDTH = [1, 1, 2];
+const LVL_OVERCLOCK_RATE = [1.35, 1.35, 1.92];
+const LVL_OVERCLOCK_DMG = [1, 1.25, 1.25];
+const LVL_EXECUTE_THRESHOLD = [0.25, 0.32, 0.4];
+const LVL_SIPHON_PULL = [1, 1.5];
+const LVL_NOVA_INTERVAL = [5000, 4000, 2500];
+
+/** Renders a per-level table entry as a whole-number percentage. */
+function pct(v: number): string {
+  return `${Math.round(v * 100)}%`;
 }
 
 export const ALL_UPGRADES: UpgradeDefinition[] = [
@@ -100,9 +144,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'ballistic',
     rarity: 'epic',
     maxLevel: 3,
-    statDiffText: (p) => p.clusterBombs ? '裂变威力升级: 次级散弹伤害提升 50%' : '解锁命中二阶裂解散弹',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.clusterBombs
+      ? `破片 ${atLevel(LVL_CLUSTER_FRAGMENTS, lvl)} 枚 · 破片伤害 ${pct(atLevel(LVL_CLUSTER_DMG, lvl))}`
+      : '子弹命中后裂解为 3 枚破片',
+    apply: (p, lvl) => {
       p.clusterBombs = true;
+      p.clusterBombFragments = atLevel(LVL_CLUSTER_FRAGMENTS, lvl);
+      p.clusterBombDamageScale = atLevel(LVL_CLUSTER_DMG, lvl);
     },
   },
   {
@@ -114,9 +162,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'ballistic',
     rarity: 'rare',
     maxLevel: 3,
-    statDiffText: (p) => p.cryoSlow ? '冰霜冷冻力场效果加深至 45%' : '解锁子弹冰霜减速与易伤力场',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.cryoSlow
+      ? `减速 ${pct(1 - atLevel(LVL_CRYO_SLOW, lvl))} · 易伤 +${pct(atLevel(LVL_CRYO_VULN, lvl))}`
+      : '附加冰霜减速与易伤',
+    apply: (p, lvl) => {
       p.cryoSlow = true;
+      p.cryoSlowMultiplier = atLevel(LVL_CRYO_SLOW, lvl);
+      p.cryoVulnerability = atLevel(LVL_CRYO_VULN, lvl);
     },
   },
 
@@ -148,9 +200,14 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'energy',
     rarity: 'epic',
     maxLevel: 3,
-    statDiffText: (p) => p.chainLightning ? '电弧威力加深: 传导伤害提升 40%' : '解锁暴击附带特斯拉连锁电弧',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.chainLightning
+      ? `连锁 ${atLevel(LVL_CHAIN_TARGETS, lvl)} 个目标 · 弧伤 ${pct(atLevel(LVL_CHAIN_DMG, lvl))}`
+      : '暴击时释放连锁电弧',
+    apply: (p, lvl) => {
       p.chainLightning = true;
+      p.chainLightningTargets = atLevel(LVL_CHAIN_TARGETS, lvl);
+      p.chainLightningDamageScale = atLevel(LVL_CHAIN_DMG, lvl);
+      p.chainLightningStun = atLevel(LVL_CHAIN_STUN, lvl);
     },
   },
   {
@@ -176,16 +233,12 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'energy',
     rarity: 'legendary',
     maxLevel: 3,
-    statDiffText: (p) =>
+    statDiffText: (p, lvl = 1) =>
       p.novaInterval > 0
-        ? `脉冲冷却: ${p.novaInterval / 1000}s → ${(p.novaInterval - 1000) / 1000}s`
-        : `解锁全屏环形冲击波 (周期 5.0s)`,
-    apply: (p) => {
-      if (p.novaInterval === 0) {
-        p.novaInterval = 5000;
-      } else {
-        p.novaInterval = Math.max(2500, p.novaInterval - 1000);
-      }
+        ? `脉冲冷却: ${p.novaInterval / 1000}s → ${atLevel(LVL_NOVA_INTERVAL, lvl) / 1000}s`
+        : `解锁全屏脉冲 (周期 ${LVL_NOVA_INTERVAL[0] / 1000}s)`,
+    apply: (p, lvl) => {
+      p.novaInterval = atLevel(LVL_NOVA_INTERVAL, lvl);
     },
   },
 
@@ -232,9 +285,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'defense',
     rarity: 'rare',
     maxLevel: 3,
-    statDiffText: (p) => p.repulsionField ? '排斥震波冷却缩短 1.5 秒' : '解锁每 6 秒一次的主动排斥环',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.repulsionField
+      ? `每 ${atLevel(LVL_REPULSE_INTERVAL, lvl)}s 一次 · 半径 ${atLevel(LVL_REPULSE_RADIUS, lvl)}px`
+      : '解锁周期性斥力冲击环',
+    apply: (p, lvl) => {
       p.repulsionField = true;
+      p.repulsionInterval = atLevel(LVL_REPULSE_INTERVAL, lvl);
+      p.repulsionRadius = atLevel(LVL_REPULSE_RADIUS, lvl);
     },
   },
   {
@@ -246,9 +303,14 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'defense',
     rarity: 'common',
     maxLevel: 3,
-    statDiffText: (p) => p.retaliationThorns ? '复仇尖刺伤害提升 50%' : '解锁受创全向穿刺反击',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.retaliationThorns
+      ? `${atLevel(LVL_THORN_COUNT, lvl)} 根光刺 · 伤害 ${pct(atLevel(LVL_THORN_DMG, lvl))} · 穿透 ${atLevel(LVL_THORN_PIERCE, lvl)}`
+      : '受创时全向射出复仇光刺',
+    apply: (p, lvl) => {
       p.retaliationThorns = true;
+      p.thornsCount = atLevel(LVL_THORN_COUNT, lvl);
+      p.thornsDamageScale = atLevel(LVL_THORN_DMG, lvl);
+      p.thornsPierce = atLevel(LVL_THORN_PIERCE, lvl);
     },
   },
   {
@@ -260,9 +322,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'defense',
     rarity: 'epic',
     maxLevel: 3,
-    statDiffText: (p) => p.naniteShield ? '护盾充能时间由 4.0s 缩短至 2.8s' : '解锁抵消单次伤害的凝光硬盾',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.naniteShield
+      ? `充能 ${atLevel(LVL_NANITE_COOLDOWN, lvl)}s · 破盾震波 ${atLevel(LVL_NANITE_WAVE, lvl)}px`
+      : '脱战 4.0s 凝聚一层免伤硬盾',
+    apply: (p, lvl) => {
       p.naniteShield = true;
+      p.naniteShieldCooldown = atLevel(LVL_NANITE_COOLDOWN, lvl);
+      p.naniteBreakWaveRadius = atLevel(LVL_NANITE_WAVE, lvl);
     },
   },
 
@@ -292,9 +358,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'summon',
     rarity: 'rare',
     maxLevel: 3,
-    statDiffText: (p) => p.droneMissiles ? '飞弹装药强化: 爆炸威力与半径提升 40%' : '解锁伴飞无人机群集束追踪飞弹',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.droneMissiles
+      ? `每 ${atLevel(LVL_MISSILE_INTERVAL, lvl) / 1000}s 一轮 · 威力 ${pct(atLevel(LVL_MISSILE_DMG, lvl) / 3)}`
+      : '为全部无人机加装追踪飞弹',
+    apply: (p, lvl) => {
       p.droneMissiles = true;
+      p.droneMissileInterval = atLevel(LVL_MISSILE_INTERVAL, lvl);
+      p.droneMissileDamageScale = atLevel(LVL_MISSILE_DMG, lvl);
     },
   },
   {
@@ -306,9 +376,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'summon',
     rarity: 'rare',
     maxLevel: 3,
-    statDiffText: (p) => p.droneShield ? '护卫无人机转速与偏折效率提升 50%' : '解锁抵消弹幕的贴身护卫无人机',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.droneShield
+      ? `碰撞免伤 ${pct(atLevel(LVL_DSHIELD_REDUCTION, lvl))} · 转速 ×${atLevel(LVL_DSHIELD_SPIN, lvl)}`
+      : '加入 1 架硬质偏折护卫无人机',
+    apply: (p, lvl) => {
       p.droneShield = true;
+      p.droneShieldReduction = atLevel(LVL_DSHIELD_REDUCTION, lvl);
+      p.droneShieldSpinScale = atLevel(LVL_DSHIELD_SPIN, lvl);
     },
   },
   {
@@ -320,9 +394,14 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'summon',
     rarity: 'epic',
     maxLevel: 3,
-    statDiffText: (p) => p.droneRailgun ? '轨道炮攻击频率提升 30%，伤害提升 50%' : '解锁重型轨道狙击激光炮',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.droneRailgun
+      ? `每 ${atLevel(LVL_RAILGUN_INTERVAL, lvl) / 1000}s 一发 · 伤害 ×${atLevel(LVL_RAILGUN_DMG, lvl)} · 宽度 ×${atLevel(LVL_RAILGUN_WIDTH, lvl)}`
+      : '部署悬浮轨道重型狙击炮',
+    apply: (p, lvl) => {
       p.droneRailgun = true;
+      p.railgunInterval = atLevel(LVL_RAILGUN_INTERVAL, lvl);
+      p.railgunDamageScale = atLevel(LVL_RAILGUN_DMG, lvl);
+      p.railgunWidthScale = atLevel(LVL_RAILGUN_WIDTH, lvl);
     },
   },
   {
@@ -334,9 +413,15 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'summon',
     rarity: 'epic',
     maxLevel: 3,
-    statDiffText: (p) => p.droneOverclock ? '超频功率加深: 伤害与射速再次提升 25%' : '解锁无人机护主献祭与全舰超频',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.droneOverclock
+      ? `机群射速 ×${atLevel(LVL_OVERCLOCK_RATE, lvl)} · 伤害 ×${atLevel(LVL_OVERCLOCK_DMG, lvl)}`
+      : '解限全部无人机功率',
+    apply: (p, lvl) => {
       p.droneOverclock = true;
+      // 1.35x matches the docs' "+40% rate"; 1.92x lands the interceptor on the
+      // promised 240ms floor (460 / 1.92).
+      p.droneRateScale = atLevel(LVL_OVERCLOCK_RATE, lvl);
+      p.droneDamageScale = atLevel(LVL_OVERCLOCK_DMG, lvl);
     },
   },
 
@@ -366,9 +451,12 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'tactical',
     rarity: 'epic',
     maxLevel: 3,
-    statDiffText: (p) => p.executioner ? '斩杀阈值提升至 32% 生命' : '解锁低血量非首领即死斩杀',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.executioner
+      ? `斩杀阈值 ${pct(atLevel(LVL_EXECUTE_THRESHOLD, lvl))} 生命`
+      : '低血量敌人直接处刑即死',
+    apply: (p, lvl) => {
       p.executioner = true;
+      p.executionerThreshold = atLevel(LVL_EXECUTE_THRESHOLD, lvl);
     },
   },
   {
@@ -397,9 +485,13 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
     category: 'tactical',
     rarity: 'rare',
     maxLevel: 2,
-    statDiffText: (p) => p.gravitySiphon ? '虹吸附带全图微型震波' : '升级瞬间全屏吸附所有宝石',
-    apply: (p) => {
+    statDiffText: (p, lvl = 1) => p.gravitySiphon
+      ? `升级全图吸取 · 宝石速度 ×${atLevel(LVL_SIPHON_PULL, lvl)}${atLevel([false, true] as boolean[], lvl) ? ' · 附带驱逐震波' : ''}`
+      : '升级瞬间吸走全图宝石',
+    apply: (p, lvl) => {
       p.gravitySiphon = true;
+      p.gravitySiphonWave = atLevel([false, true], lvl);
+      p.gemPullSpeedScale = atLevel(LVL_SIPHON_PULL, lvl);
     },
   },
 ];
@@ -517,8 +609,11 @@ export function getRandomUpgrades(
         rarity: chosen.rarity,
         level: currentLvl + 1,
         maxLevel: chosen.maxLevel,
-        statDiffText: (p: Player) => chosen.statDiffText(p, currentLvl),
-        apply: (p: Player) => chosen.apply(p, currentLvl),
+        // currentLvl is the level BEFORE this pick; the card previews and applies
+        // the level being granted. apply() also forwards the level the caller
+        // resolves at pick time, so a stale card can never grant the wrong tier.
+        statDiffText: (p: Player) => chosen.statDiffText(p, currentLvl + 1),
+        apply: (p: Player, level: number) => chosen.apply(p, level),
       });
     }
   }
@@ -549,8 +644,8 @@ export function getRandomUpgrades(
       rarity: chosen.rarity,
       level: currentLvl + 1,
       maxLevel: chosen.maxLevel,
-      statDiffText: (p: Player) => chosen.statDiffText(p, currentLvl),
-      apply: (p: Player) => chosen.apply(p, currentLvl),
+      statDiffText: (p: Player) => chosen.statDiffText(p, currentLvl + 1),
+      apply: (p: Player, level: number) => chosen.apply(p, level),
     });
   }
 

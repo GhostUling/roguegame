@@ -20,6 +20,13 @@ import { drawCharacterShip, getCharacterDef } from './characters';
 import { drawResonanceArc } from './resonanceArc';
 import { getPilotWeaponStats, getTwinPositions, hasPilot } from './pilots';
 import { createPlayer } from './player';
+import {
+  interceptorInterval,
+  interceptorShotDamage,
+  missileShotDamage,
+  railgunInterval,
+  railgunShotDamage,
+} from './drones';
 import { GameModeDef, isPaired, modeOfPlayer } from './modes';
 import { ENEMY_TYPES, EnemyTypeDef, enemyHpFor, pickEnemyType } from './enemyTypes';
 import { renderScene } from './render/renderer';
@@ -842,14 +849,14 @@ export class GameEngine {
           type: 'guardian',
           angle: Math.PI,
           dist: 35,
-          rotSpeed: 3.2,
+          rotSpeed: 3.2 * this.player.droneShieldSpinScale,
           lastFireTime: now,
         });
       }
     }
 
     // Update and fire drones
-    const speedBoost = this.player.droneOverclock ? 1.35 : 1.0;
+    const speedBoost = this.player.droneRateScale;
 
     for (let i = 0; i < this.player.drones.length; i++) {
       const drone = this.player.drones[i];
@@ -858,18 +865,10 @@ export class GameEngine {
       const droneX = this.player.x + Math.cos(drone.angle) * drone.dist;
       const droneY = this.player.y + Math.sin(drone.angle) * drone.dist;
 
-      const carrierMult =
-        this.hasPilot('epsilon_carrier')
-          ? this.player.isSkillActive
-            ? 1.8
-            : 1.35
-          : 1.0;
+      const isCarrier = this.hasPilot('epsilon_carrier');
 
       if (drone.type === 'interceptor') {
-        let fireInterval = this.player.droneOverclock ? 340 : 460;
-        if (this.hasPilot('epsilon_carrier')) {
-          fireInterval = Math.round(fireInterval * (this.player.isSkillActive ? 0.45 : 0.7));
-        }
+        const fireInterval = interceptorInterval(this.player, isCarrier);
 
         // 1. Regular plasma shots
         if (now - drone.lastFireTime >= fireInterval && this.enemies.length > 0) {
@@ -888,7 +887,7 @@ export class GameEngine {
           if (target) {
             drone.lastFireTime = now;
             const aim = Math.atan2(target.y - droneY, target.x - droneX);
-            const droneDmg = Math.round(this.player.bulletDamage * 0.45 * carrierMult);
+            const droneDmg = interceptorShotDamage(this.player, isCarrier);
             this.projectiles.push({
               id: this.nextProjId++,
               x: droneX,
@@ -910,13 +909,13 @@ export class GameEngine {
 
         // 2. Micro-Missile barrage (if droneMissiles unlocked)
         if (this.player.droneMissiles) {
-          const missileInterval = 2400;
+          const missileInterval = this.player.droneMissileInterval;
           if (now - (drone.lastMissileTime || 0) >= missileInterval && this.enemies.length > 0) {
             drone.lastMissileTime = now;
             // Target random enemy
             const target = this.enemies[Math.floor(Math.random() * this.enemies.length)];
             const aim = Math.atan2(target.y - droneY, target.x - droneX);
-            const missileDmg = Math.round(this.player.bulletDamage * 1.5 * carrierMult);
+            const missileDmg = missileShotDamage(this.player, isCarrier);
             this.projectiles.push({
               id: this.nextProjId++,
               x: droneX,
@@ -940,10 +939,7 @@ export class GameEngine {
       } else if (drone.type === 'guardian') {
         // Defensive perimeter drone, pulses gently
       } else if (drone.type === 'railgun') {
-        let fireInterval = this.player.droneOverclock ? 2500 : 3400;
-        if (this.hasPilot('epsilon_carrier')) {
-          fireInterval = Math.round(fireInterval * (this.player.isSkillActive ? 0.5 : 0.75));
-        }
+        const fireInterval = railgunInterval(this.player, isCarrier);
 
         if (now - drone.lastFireTime >= fireInterval && this.enemies.length > 0) {
           // Target highest HP enemy
@@ -956,7 +952,7 @@ export class GameEngine {
 
           drone.lastFireTime = now;
           const aim = Math.atan2(bossOrTank.y - droneY, bossOrTank.x - droneX);
-          const railDmg = Math.round(this.player.bulletDamage * 2.8 * carrierMult);
+          const railDmg = railgunShotDamage(this.player, isCarrier);
           sound.playLaserShot();
 
           this.projectiles.push({
@@ -967,7 +963,7 @@ export class GameEngine {
             vy: Math.sin(aim) * 16,
             damage: railDmg,
             pierce: 5,
-            radius: 6,
+            radius: 6 * this.player.railgunWidthScale,
             color: this.hasPilot('epsilon_carrier') ? '#f59e0b' : '#a855f7',
             trail: [],
             isCrit: true,
@@ -1072,7 +1068,7 @@ export class GameEngine {
     if (!this.player.repulsionField) return;
 
     this.player.repulsionTimer = (this.player.repulsionTimer || 0) + dt;
-    if (this.player.repulsionTimer >= 6.0) {
+    if (this.player.repulsionTimer >= this.player.repulsionInterval) {
       this.player.repulsionTimer = 0;
 
       this.shockwaves.push({
@@ -1080,7 +1076,7 @@ export class GameEngine {
         x: this.player.x,
         y: this.player.y,
         radius: 15,
-        maxRadius: 160,
+        maxRadius: this.player.repulsionRadius,
         color: '#38bdf8',
         width: 3.5,
         life: 0,
@@ -1093,7 +1089,8 @@ export class GameEngine {
         const dx = e.x - this.player.x;
         const dy = e.y - this.player.y;
         const distSq = dx * dx + dy * dy;
-        if (distSq < 160 * 160 && distSq > 1) {
+        const repelR = this.player.repulsionRadius;
+        if (distSq < repelR * repelR && distSq > 1) {
           const dist = Math.sqrt(distSq);
           e.x += (dx / dist) * 90;
           e.y += (dy / dist) * 90;
@@ -1109,7 +1106,7 @@ export class GameEngine {
 
     if (!this.player.naniteShieldActive) {
       this.player.naniteShieldTimer = (this.player.naniteShieldTimer || 0) + dt;
-      if (this.player.naniteShieldTimer >= 4.0) {
+      if (this.player.naniteShieldTimer >= this.player.naniteShieldCooldown) {
         this.player.naniteShieldActive = true;
         this.player.naniteShieldTimer = 0;
         sound.playSkillReady();
@@ -1234,7 +1231,8 @@ export class GameEngine {
             p.hitEnemyIds.add(enemy.id);
 
             // Cryo freeze vulnerability (20% bonus damage)
-            const dmgMultiplier = enemy.frozenTimer && enemy.frozenTimer > 0 ? 1.2 : 1.0;
+            const dmgMultiplier =
+              enemy.frozenTimer && enemy.frozenTimer > 0 ? 1 + this.player.cryoVulnerability : 1.0;
             const finalDmg = Math.round(p.damage * dmgMultiplier);
 
             enemy.hp -= finalDmg;
@@ -1306,8 +1304,13 @@ export class GameEngine {
             // Cluster Bombs Synergy: split into 3 sub-shards
             if (this.player.clusterBombs && !p.isClusterSub && this.projectiles.length < 110) {
               const baseAngle = Math.atan2(p.vy, p.vx);
-              const subDmg = Math.round(p.damage * 0.4);
-              [-0.4, 0, 0.4].forEach((offset) => {
+              const subDmg = Math.round(p.damage * this.player.clusterBombDamageScale);
+              const fragCount = this.player.clusterBombFragments;
+              const offsets: number[] = [];
+              for (let i = 0; i < fragCount; i++) {
+                offsets.push((i - (fragCount - 1) / 2) * 0.4);
+              }
+              offsets.forEach((offset) => {
                 const subA = baseAngle + offset;
                 this.projectiles.push({
                   id: this.nextProjId++,
@@ -1333,16 +1336,22 @@ export class GameEngine {
             if (this.player.chainLightning && p.isCrit) {
               sound.playTeslaArc();
               let chains = 0;
-              for (let k = 0; k < this.enemies.length && chains < 3; k++) {
+              for (let k = 0; k < this.enemies.length && chains < this.player.chainLightningTargets; k++) {
                 const other = this.enemies[k];
                 if (other.id !== enemy.id) {
                   const ox = other.x - enemy.x;
                   const oy = other.y - enemy.y;
                   if (ox * ox + oy * oy < 140 * 140) {
                     chains++;
-                    const arcDmg = Math.round(p.damage * 0.6);
+                    const arcDmg = Math.round(p.damage * this.player.chainLightningDamageScale);
                     other.hp -= arcDmg;
                     other.hitFlashTimer = 0.08;
+                    if (this.player.chainLightningStun > 0) {
+                      other.frozenTimer = Math.max(
+                        other.frozenTimer || 0,
+                        this.player.chainLightningStun
+                      );
+                    }
                     this.spawnImpactSparks(other.x, other.y, '#38bdf8', 4);
                   }
                 }
@@ -1354,7 +1363,7 @@ export class GameEngine {
               this.player.executioner &&
               !enemy.isBoss &&
               enemy.hp > 0 &&
-              enemy.hp <= enemy.maxHp * 0.25
+              enemy.hp <= enemy.maxHp * this.player.executionerThreshold
             ) {
               enemy.hp = 0;
               this.addFloatingText(enemy.x, enemy.y - 18, 'EXECUTE', '#ef4444', true);
@@ -1440,7 +1449,7 @@ export class GameEngine {
             x: contactX,
             y: contactY,
             radius: 12,
-            maxRadius: 80,
+            maxRadius: this.player.naniteBreakWaveRadius,
             color: '#38bdf8',
             width: 3,
             life: 0,
@@ -1484,9 +1493,10 @@ export class GameEngine {
 
   private triggerRetaliationThorns() {
     sound.playShoot(1.6);
-    const thornDmg = Math.round(this.player.bulletDamage * 0.9);
-    for (let i = 0; i < 8; i++) {
-      const a = (i * Math.PI) / 4;
+    const thornDmg = Math.round(this.player.bulletDamage * this.player.thornsDamageScale);
+    const thornCount = this.player.thornsCount;
+    for (let i = 0; i < thornCount; i++) {
+      const a = (i * Math.PI * 2) / thornCount;
       this.projectiles.push({
         id: this.nextProjId++,
         x: this.player.x,
@@ -1494,7 +1504,7 @@ export class GameEngine {
         vx: Math.cos(a) * 12,
         vy: Math.sin(a) * 12,
         damage: thornDmg,
-        pierce: 2,
+        pierce: this.player.thornsPierce,
         radius: 4,
         color: '#f43f5e',
         trail: [],
@@ -1630,7 +1640,7 @@ export class GameEngine {
       if (isSlowedBySkill) currentSlow *= 0.25;
       if (e.frozenTimer && e.frozenTimer > 0) {
         e.frozenTimer -= dt;
-        currentSlow *= 0.65;
+        currentSlow *= this.player.cryoSlowMultiplier;
       }
 
       if (e.hp <= 0) {
@@ -1823,7 +1833,7 @@ export class GameEngine {
             x: this.player.x,
             y: this.player.y,
             radius: 12,
-            maxRadius: 80,
+            maxRadius: this.player.naniteBreakWaveRadius,
             color: '#38bdf8',
             width: 3,
             life: 0,
@@ -1833,7 +1843,7 @@ export class GameEngine {
         } else if (this.player.invincibleTimer <= 0) {
           let incomingDmg = e.damage;
           if (this.player.droneShield) {
-            incomingDmg = Math.max(1, Math.round(incomingDmg * 0.85));
+            incomingDmg = Math.max(1, Math.round(incomingDmg * (1 - this.player.droneShieldReduction)));
           }
           if (this.hasPilot('beta_phalanx')) {
             incomingDmg = Math.round(incomingDmg * 0.8);
@@ -1998,7 +2008,9 @@ export class GameEngine {
       if (distSq < magnetSq || g.attracted) {
         g.attracted = true;
         const dist = Math.sqrt(distSq);
-        const pullSpeed = Math.min(18, 5 + (1 - dist / (this.player.magnetRadius + 100)) * 14);
+        const pullSpeed =
+          Math.min(18, 5 + (1 - dist / (this.player.magnetRadius + 100)) * 14) *
+          this.player.gemPullSpeedScale;
         g.vx = (dx / Math.max(1, dist)) * pullSpeed;
         g.vy = (dy / Math.max(1, dist)) * pullSpeed;
 
@@ -2043,6 +2055,33 @@ export class GameEngine {
     if (this.player.gravitySiphon) {
       for (let g = 0; g < this.gems.length; g++) {
         this.gems[g].attracted = true;
+      }
+      if (this.player.gravitySiphonWave) {
+        const waveR = Math.max(this.width, this.height) * 0.6;
+        this.shockwaves.push({
+          id: Math.random(),
+          x: this.player.x,
+          y: this.player.y,
+          radius: 20,
+          maxRadius: waveR,
+          color: '#a855f7',
+          width: 3,
+          life: 0,
+          maxLife: 0.5,
+        });
+        for (let i = 0; i < this.enemies.length; i++) {
+          const e = this.enemies[i];
+          const dx = e.x - this.player.x;
+          const dy = e.y - this.player.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > 1 && dist < waveR) {
+            e.x += (dx / dist) * 70;
+            e.y += (dy / dist) * 70;
+            e.hp -= Math.round(this.player.bulletDamage * 0.6);
+            e.hitFlashTimer = 0.08;
+          }
+        }
+        this.triggerScreenShake(5);
       }
     }
 

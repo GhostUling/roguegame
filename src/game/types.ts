@@ -109,27 +109,57 @@ export interface Player {
   timeSinceLastDamage: number; // Out-of-combat timer for health recovery
 
   // Expanded Roguelite Synergies
+  // The `*Scale`/`*Radius`/`*Count` fields below are written level-by-level in
+  // upgrades.ts and read by the engine, which is how a multi-level upgrade keeps
+  // scaling after level 1. Flag-only booleans mean "unlocked"; these mean "how much".
   bouncingBullets: number; // 0, 1, 2, 3
   clusterBombs: boolean; // splits into mini shells
+  clusterBombFragments: number;
+  clusterBombDamageScale: number; // fraction of the parent bullet's damage
   cryoSlow: boolean; // slows by 35% + 20% vulnerability
+  cryoSlowMultiplier: number; // enemy speed multiplier while frozen
+  cryoVulnerability: number; // extra damage taken while frozen
   chainLightning: boolean; // arcs to 3 nearby enemies on crit
+  chainLightningTargets: number;
+  chainLightningDamageScale: number;
+  chainLightningStun: number; // seconds of stun applied by each arc
   repulsionField: boolean; // periodic pushback wave
   repulsionTimer: number;
+  repulsionInterval: number; // seconds between waves
+  repulsionRadius: number;
   retaliationThorns: boolean; // 360 spikes on damaged
+  thornsCount: number;
+  thornsDamageScale: number;
+  thornsPierce: number;
   naniteShield: boolean; // absorbs 1 hit after 4s without damage
   naniteShieldActive: boolean;
   naniteShieldTimer: number;
+  naniteShieldCooldown: number; // seconds to recharge
+  naniteBreakWaveRadius: number; // shockwave radius when the shield breaks
   executioner: boolean; // execute enemies < 25% HP
+  executionerThreshold: number; // fraction of max HP that triggers the execution
   glassCannon: boolean; // +60% dmg, -20% max HP
   gravitySiphon: boolean; // suck all gems on level up
+  gravitySiphonWave: boolean; // also release a knockback wave on level up
+  gemPullSpeedScale: number; // gem attraction speed multiplier
 
   // Drone Summons
   drones: Drone[];
   droneCount: number;
   droneRailgun: boolean;
+  railgunInterval: number; // ms between railgun shots
+  railgunDamageScale: number; // multiplier on the player's bullet damage
+  railgunWidthScale: number; // beam width multiplier
   droneOverclock: boolean;
+  droneFireInterval: number; // base ms between interceptor shots
+  droneRateScale: number; // overclock speed multiplier; also divides the railgun interval
+  droneDamageScale: number;
   droneMissiles?: boolean;
+  droneMissileInterval: number; // ms between missile volleys
+  droneMissileDamageScale: number;
   droneShield?: boolean;
+  droneShieldReduction: number; // collision damage reduction, 0..1
+  droneShieldSpinScale: number;
 
   // Meta deckbuilding & reroll
   rerollCount: number;
@@ -293,8 +323,8 @@ export interface UpgradeOption {
   rarity: UpgradeRarity;
   level: number;
   maxLevel: number;
-  statDiffText: (player: Player) => string;
-  apply: (player: Player) => void;
+  statDiffText: (player: Player, currentLvl?: number) => string;
+  apply: (player: Player, currentLvl: number) => void;
 }
 
 export type GameState = 'title' | 'character_select' | 'playing' | 'paused' | 'levelup' | 'gameover' | 'victory';

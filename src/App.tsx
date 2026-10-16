@@ -247,10 +247,14 @@ export default function App() {
         p.activeSlots.push(upgrade.key);
       }
 
-      upgrade.apply(p);
-
       if (!p.upgradeLevels) p.upgradeLevels = {};
-      p.upgradeLevels[upgrade.key] = (p.upgradeLevels[upgrade.key] || 0) + 1;
+      // The level being granted is computed before apply() so multi-level
+      // upgrades can scale; without it every level past the first was a no-op.
+      const nextLevel = (p.upgradeLevels[upgrade.key] || 0) + 1;
+
+      upgrade.apply(p, nextLevel);
+
+      p.upgradeLevels[upgrade.key] = nextLevel;
       upgradeLevelsRef.current = { ...p.upgradeLevels };
 
       setUpgradeLevels({ ...p.upgradeLevels });

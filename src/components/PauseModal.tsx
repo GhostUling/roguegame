@@ -5,6 +5,12 @@ import { ALL_UPGRADES, UpgradeDefinition } from '../game/upgrades';
 import { getCharacterDef } from '../game/characters';
 import { isPaired } from '../game/modes';
 import {
+  interceptorInterval,
+  interceptorShotDamage,
+  missileShotDamage,
+  railgunShotDamage,
+} from '../game/drones';
+import {
   Play,
   RotateCcw,
   Home,
@@ -54,17 +60,13 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   const currentUpgrades = player.upgradeLevels || upgradeLevels || {};
   const upgradeEntries = Object.entries(currentUpgrades).filter(([, lvl]) => lvl > 0);
 
-  // Calculate detailed drone values
+  // Drone figures come from the same pure module the engine fires them with,
+  // so this panel cannot drift away from the actual cadence and damage.
   const hasCarrier =
     player.characterId === 'epsilon_carrier' || twinDef?.id === 'epsilon_carrier';
-  const carrierMult = hasCarrier ? (player.isSkillActive ? 1.8 : 1.35) : 1.0;
-
-  let baseDroneInterval = player.droneOverclock ? 340 : 460;
-  if (hasCarrier) {
-    baseDroneInterval = Math.round(baseDroneInterval * (player.isSkillActive ? 0.45 : 0.7));
-  }
+  const baseDroneInterval = interceptorInterval(player, hasCarrier);
   const droneAttacksPerSec = (1000 / baseDroneInterval).toFixed(1);
-  const droneShotDmg = Math.round(player.bulletDamage * 0.45 * carrierMult);
+  const droneShotDmg = interceptorShotDamage(player, hasCarrier);
 
   const mainAttacksPerSec = (1000 / Math.max(1, player.fireRate)).toFixed(1);
 
@@ -490,7 +492,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     <span>🚀 蜂群微型制导飞弹</span>
                     <span className="font-mono font-bold text-[11px]">
                       {player.droneMissiles
-                        ? `每 2.4s (伤 ${Math.round(player.bulletDamage * 1.5 * carrierMult)})`
+                        ? `每 ${player.droneMissileInterval / 1000}s (伤 ${missileShotDamage(player, hasCarrier)})`
                         : '未解锁'}
                     </span>
                   </div>
@@ -504,7 +506,9 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                   >
                     <span>🛡️ 护卫偏折力场机</span>
                     <span className="font-mono font-bold text-[11px]">
-                      {player.droneShield ? '偏折弹幕 +15%免伤' : '未解锁'}
+                      {player.droneShield
+                        ? `偏折弹幕 +${Math.round(player.droneShieldReduction * 100)}%免伤`
+                        : '未解锁'}
                     </span>
                   </div>
 
@@ -518,7 +522,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     <span>⚡ 重型轨道激光炮</span>
                     <span className="font-mono font-bold text-[11px]">
                       {player.droneRailgun
-                        ? `贯穿 5 敌 (伤 ${Math.round(player.bulletDamage * 2.8 * carrierMult)})`
+                        ? `贯穿 5 敌 (伤 ${railgunShotDamage(player, hasCarrier)})`
                         : '未解锁'}
                     </span>
                   </div>
