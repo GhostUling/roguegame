@@ -28,6 +28,8 @@ interface UpgradeModalProps {
   onSelectUpgrade: (upgrade: UpgradeOption) => void;
   onReroll?: () => void;
   rerollsRemaining?: number;
+  /** Test switch from the pause settings: rerolling never runs out. */
+  infiniteRerolls?: boolean;
 }
 
 export const UpgradeModal: React.FC<UpgradeModalProps> = ({
@@ -36,7 +38,10 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   onSelectUpgrade,
   onReroll,
   rerollsRemaining = 0,
+  infiniteRerolls = false,
 }) => {
+  const canReroll = infiniteRerolls || rerollsRemaining > 0;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === '1' && upgrades[0]) {
@@ -45,14 +50,14 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         handleChoose(upgrades[1]);
       } else if (e.key === '3' && upgrades[2]) {
         handleChoose(upgrades[2]);
-      } else if ((e.key === 'r' || e.key === 'R') && onReroll && rerollsRemaining > 0) {
+      } else if ((e.key === 'r' || e.key === 'R') && onReroll && canReroll) {
         handleReroll();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [upgrades, rerollsRemaining]);
+  }, [upgrades, canReroll]);
 
   const handleChoose = (u: UpgradeOption) => {
     sound.playClick(true);
@@ -60,7 +65,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   };
 
   const handleReroll = () => {
-    if (rerollsRemaining > 0 && onReroll) {
+    if (canReroll && onReroll) {
       sound.playReroll();
       onReroll();
     }
@@ -182,15 +187,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             {onReroll && (
               <button
                 onClick={handleReroll}
-                disabled={rerollsRemaining <= 0}
+                disabled={!canReroll}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border font-mono-numbers text-xs font-semibold transition-all cursor-pointer ${
-                  rerollsRemaining > 0
+                  canReroll
                     ? 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-cyan-500/40 hover:scale-105 active:scale-95'
                     : 'bg-slate-900/40 text-slate-600 border-slate-800 cursor-not-allowed'
                 }`}
               >
-                <RefreshCw size={12} className={rerollsRemaining > 0 ? 'text-cyan-400' : ''} />
-                <span>矩阵重抽 [R] (剩余 {rerollsRemaining})</span>
+                <RefreshCw size={12} className={canReroll ? 'text-cyan-400' : ''} />
+                <span>
+                  矩阵重抽 [R] (剩余 {infiniteRerolls ? '∞' : rerollsRemaining})
+                </span>
               </button>
             )}
           </div>

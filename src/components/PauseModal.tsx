@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Flame,
   Bookmark,
+  RefreshCw,
 } from 'lucide-react';
 
 interface PauseModalProps {
@@ -36,6 +37,9 @@ interface PauseModalProps {
   gameTime?: number;
   isMuted: boolean;
   onToggleMute: () => void;
+  /** Test switch: level-up rerolls stop consuming the run's reroll count. */
+  infiniteReroll: boolean;
+  onToggleInfiniteReroll: () => void;
   onResume: () => void;
   onRestart: () => void;
   onHome: () => void;
@@ -48,6 +52,8 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   gameTime = 0,
   isMuted,
   onToggleMute,
+  infiniteReroll,
+  onToggleInfiniteReroll,
   onResume,
   onRestart,
   onHome,
@@ -676,6 +682,19 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             >
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
               <span>{isMuted ? '开启音效' : '静音'}</span>
+            </button>
+
+            <button
+              onClick={onToggleInfiniteReroll}
+              title="测试用：开启后升级时重抽不再消耗剩余次数"
+              className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer border ${
+                infiniteReroll
+                  ? 'bg-amber-500/15 border-amber-400/60 text-amber-300'
+                  : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-300'
+              }`}
+            >
+              <RefreshCw size={15} />
+              <span>无限刷新 {infiniteReroll ? '开' : '关'}</span>
             </button>
 
             <button

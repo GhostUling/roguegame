@@ -49,6 +49,14 @@ export default function App() {
     }
   });
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  /** Test switch, kept with the other settings and persisted so a reload keeps it. */
+  const [infiniteReroll, setInfiniteReroll] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('geom_overload_infinite_reroll') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [timeScale, setTimeScale] = useState<number>(1);
   const [controlMode, setControlMode] = useState<'keys' | 'mouse'>('keys');
 
@@ -207,6 +215,19 @@ export default function App() {
     setIsMuted(muted);
   }, []);
 
+  const toggleInfiniteReroll = useCallback(() => {
+    setInfiniteReroll((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('geom_overload_infinite_reroll', next ? '1' : '0');
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+    sound.playClick(true);
+  }, []);
+
   const handleChangeTimeScale = useCallback((scale: number) => {
     setTimeScale(scale);
     if (engineRef.current) {
@@ -231,14 +252,15 @@ export default function App() {
   const handleReroll = useCallback(() => {
     if (!engineRef.current) return;
     const p = engineRef.current.player;
-    if ((p.rerollCount || 0) > 0) {
-      p.rerollCount--;
-      const currentLevels = p.upgradeLevels || upgradeLevelsRef.current;
-      const options = getRandomUpgrades(p, currentLevels, 3, poolForMode(modeOfPlayer(p)));
-      setCurrentUpgrades(options);
-      setPlayerState({ ...p });
-    }
-  }, []);
+    // The infinite-reroll test switch rerolls without spending the run's count.
+    if (!infiniteReroll && (p.rerollCount || 0) <= 0) return;
+    if (!infiniteReroll) p.rerollCount--;
+
+    const currentLevels = p.upgradeLevels || upgradeLevelsRef.current;
+    const options = getRandomUpgrades(p, currentLevels, 3, poolForMode(modeOfPlayer(p)));
+    setCurrentUpgrades(options);
+    setPlayerState({ ...p });
+  }, [infiniteReroll]);
 
   const handleSelectUpgrade = useCallback(
     (upgrade: UpgradeOption) => {
@@ -335,6 +357,7 @@ export default function App() {
           onSelectUpgrade={handleSelectUpgrade}
           onReroll={handleReroll}
           rerollsRemaining={playerState.rerollCount || 0}
+          infiniteRerolls={infiniteReroll}
         />
       )}
 
@@ -346,6 +369,8 @@ export default function App() {
           gameTime={gameTime}
           isMuted={isMuted}
           onToggleMute={toggleMute}
+          infiniteReroll={infiniteReroll}
+          onToggleInfiniteReroll={toggleInfiniteReroll}
           onResume={resumeGame}
           onRestart={() => startGameWithChar(selectedCharacterId, twinPilotId || undefined)}
           onHome={() => setGameState('character_select')}

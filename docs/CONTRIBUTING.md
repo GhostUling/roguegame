@@ -174,5 +174,5 @@ requestAnimationFrame
 2. **图鉴逐级文案里的数字是手写散文** —— `levels[].description` 的绝对数值不由 `upgrades.ts` 的数值表推导，改数值时可能在文案里留下假的数字（已修过 fire_rate 的 250ms 基准、shield 的自愈数值、critical_core 的倍率上限、railgun 的 3.2s、nova 的 2.5s 共 5 处）。
 3. **`engine.ts` 仍是单体编排类** —— 敌人 AI 状态机、碰撞、掉落仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`modes.ts`）、玩家构造（`player.ts`）、无人机算式（`drones.ts`）做过拆分，后续若继续拆分，建议顺序：敌人 AI → 碰撞/伤害 → 掉落与经验。
 4. **测试覆盖不全** —— 只覆盖纯函数模块（`npm test`）。引擎循环与渲染需要 canvas，仍只能靠手玩。
-5. **`PauseModal` 残留硬编码** —— 如轨道炮「贯穿 5 敌」的 5 与引擎里的 `pierce: 5` 是两份。无人机算式已收进 `drones.ts` 共用，同类数字遇到就顺手收拢。
+5. **`PauseModal` 残留硬编码** —— 如轨道炮「贯穿 5 敌」的 5 与引擎里的 `pierce: 5` 是两份。无人机算式已收进 `drones.ts` 共用，同类数字遇到就顺手收拢。另外暂停菜单底部有一个 **无限刷新** 开关（`localStorage: geom_overload_infinite_reroll`）：它是测试开关，只让升级重抽不消耗次数，不改变任何玩法数值，默认关闭。
 6. **3× 倍速下单帧步长最大 0.24s** —— 位移约 63px/帧，极快的敌人理论上可能穿过碰撞判定。若要消除需引入子步进。
