@@ -16,16 +16,13 @@ import {
   GameMode,
 } from './types';
 import { sound } from './audio';
-import { getCharacterDef } from './characters';
-import { drawCharacterShip, drawResonanceArc } from './shipRender';
-import { getPilotWeaponStats } from './pilotStats';
-
-const TWIN_WING_DIST = 32; // half of the wing span: ships sit 64px apart
-/**
- * Twin Link compounds upgrades across two weapon systems, so the pair outgrows a
- * solo run. The enemy stat curve is steepened by this factor to keep pace.
- */
-const TWIN_GROWTH_SCALE = 1.5;
+import { drawCharacterShip, getCharacterDef } from './characters';
+import { drawResonanceArc } from './resonanceArc';
+import { getPilotWeaponStats, getTwinPositions, hasPilot } from './pilots';
+import { createPlayer } from './player';
+import { GameModeDef, isPaired, modeOfPlayer } from './modes';
+import { ENEMY_TYPES, EnemyTypeDef, enemyHpFor, pickEnemyType } from './enemyTypes';
+import { renderScene } from './render/renderer';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -44,8 +41,9 @@ export interface GameEngineCallbacks {
 export class GameEngine {
   public canvas: HTMLCanvasElement;
   public ctx: CanvasRenderingContext2D;
-  private width: number = 0;
-  private height: number = 0;
+  /** Viewport size in CSS pixels; read by the renderer. */
+  public width: number = 0;
+  public height: number = 0;
 
   // Game state
   public state: GameState = 'title';
@@ -77,14 +75,14 @@ export class GameEngine {
 
   // Pointer steering
   public controlMode: 'keys' | 'mouse' = 'keys';
-  private mouseX: number = 0;
-  private mouseY: number = 0;
-  private mouseInside: boolean = false;
+  public mouseX: number = 0;
+  public mouseY: number = 0;
+  public mouseInside: boolean = false;
 
   // Screen shake
   private shakeIntensity: number = 0;
   private shakeDecay: number = 0.9;
-  private shakeOffset: { x: number; y: number } = { x: 0, y: 0 };
+  public shakeOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   // Spawning & timers
   private nextEnemyId: number = 1;
@@ -102,8 +100,8 @@ export class GameEngine {
   private nextDroneId: number = 1;
 
   // Visuals & Offscreen Glow Texture Cache
-  private pulseAnimTime: number = 0;
-  private glowCache: Map<string, HTMLCanvasElement> = new Map();
+  /** Seconds since the run started, drives every idle animation. */
+  public pulseAnimTime: number = 0;
 
   constructor(canvas: HTMLCanvasElement, callbacks: GameEngineCallbacks) {
     this.canvas = canvas;
@@ -112,7 +110,7 @@ export class GameEngine {
     this.ctx = ctx;
     this.callbacks = callbacks;
 
-    this.player = this.createDefaultPlayer('alpha_prism');
+    this.player = createPlayer('alpha_prism');
     this.handleResize();
 
     window.addEventListener('resize', this.handleResize);
@@ -167,159 +165,24 @@ export class GameEngine {
     this.keys[e.key.toLowerCase()] = false;
   };
 
-  public createDefaultPlayer(
-    charId: CharacterId = 'alpha_prism',
-    gameMode: GameMode = 'standard',
-    twinPilotId?: CharacterId
-  ): Player {
-    const def1 = getCharacterDef(charId);
-    const isTwin = gameMode === 'twin_link' && !!twinPilotId;
-    const def2 = isTwin ? getCharacterDef(twinPilotId!) : null;
-
-    const stats1 = def1.baseStats;
-    const stats2 = def2 ? def2.baseStats : null;
-
-    // Combined or shared stats
-    const combinedHp = stats2 ? stats1.hp + stats2.hp : stats1.hp;
-    const combinedSpeed = stats2 ? (stats1.speed + stats2.speed) / 2 : stats1.speed;
-    const combinedMagnet = stats2 ? Math.max(stats1.magnetRadius, stats2.magnetRadius) : stats1.magnetRadius;
-    const combinedCrit = stats2 ? Math.max(stats1.critChance, stats2.critChance) : stats1.critChance;
-    const combinedCritMult = stats2 ? Math.max(stats1.critMultiplier, stats2.critMultiplier) : stats1.critMultiplier;
-
-    const hasPhalanx = charId === 'beta_phalanx' || (isTwin && twinPilotId === 'beta_phalanx');
-    const hasAurora = charId === 'zeta_aurora' || (isTwin && twinPilotId === 'zeta_aurora');
-
-    const carrierDrones: Drone[] = [];
-    if (charId === 'epsilon_carrier') {
-      carrierDrones.push({
-        id: 1,
-        type: 'interceptor',
-        angle: 0,
-        dist: 55,
-        rotSpeed: 2.2,
-        lastFireTime: this.gameClockMs,
-      });
-    }
-    if (isTwin && twinPilotId === 'epsilon_carrier') {
-      carrierDrones.push({
-        id: 2,
-        type: 'interceptor',
-        angle: Math.PI,
-        dist: 55,
-        rotSpeed: -2.2,
-        lastFireTime: this.gameClockMs,
-      });
-    }
-
-    const initialUpgradeLevels: Record<string, number> = {};
-    const initialActiveSlots: string[] = [];
-    if (carrierDrones.length > 0) {
-      initialActiveSlots.push('summon_drone');
-      initialUpgradeLevels['summon_drone'] = carrierDrones.length;
-    }
-
-    const maxSkillCooldown = def2
-      ? Math.max(def1.activeSkill.cooldown, def2.activeSkill.cooldown)
-      : def1.activeSkill.cooldown;
-
-    const maxSkillDuration = def2
-      ? Math.max(def1.activeSkill.duration || 0, def2.activeSkill.duration || 0)
-      : (def1.activeSkill.duration || 0);
-
-    return {
-      characterId: charId,
-      gameMode: isTwin ? 'twin_link' : 'standard',
-      twinPilotId: isTwin ? twinPilotId : undefined,
-      pilot2LastFireTime: 0,
-      pilot2Angle: 0,
-      x: this.width > 0 ? this.width / 2 : 500,
-      y: this.height > 0 ? this.height / 2 : 400,
-      vx: 0,
-      vy: 0,
-      radius: 18,
-      hp: combinedHp,
-      maxHp: combinedHp,
-      speed: combinedSpeed,
-      fireRate: stats1.fireRate,
-      lastFireTime: 0,
-      bulletCount: stats1.bulletCount,
-      bulletDamage: stats1.bulletDamage,
-      bulletPierce: stats1.bulletPierce,
-      bulletSpeed: 11,
-      magnetRadius: combinedMagnet,
-      level: 1,
-      xp: 0,
-      nextLevelXp: 18,
-      angle: 0,
-      kills: 0,
-      score: 0,
-      totalDamageDealt: 0,
-      orbitSatellites: stats1.orbitSatellites || 0,
-      novaTimer: 0,
-      novaInterval: 0,
-      critChance: combinedCrit,
-      critMultiplier: combinedCritMult,
-      shieldRegenRate: hasPhalanx ? 7.0 : 3.5, // Out-of-combat self-repair rate
-      invincibleTimer: 0,
-      timeSinceLastDamage: 99.0, // Starts fully out-of-combat
-      // Synergies & specials
-      bouncingBullets: hasAurora ? 1 : 0,
-      clusterBombs: false,
-      cryoSlow: hasAurora ? true : false,
-      chainLightning: false,
-      repulsionField: false,
-      repulsionTimer: 0,
-      retaliationThorns: false,
-      naniteShield: false,
-      naniteShieldActive: false,
-      naniteShieldTimer: 0,
-      executioner: false,
-      glassCannon: false,
-      gravitySiphon: false,
-      // Drones
-      drones: carrierDrones,
-      droneCount: carrierDrones.length,
-      droneRailgun: false,
-      droneOverclock: false,
-      droneMissiles: false,
-      droneShield: false,
-      // Meta & deckbuilding
-      rerollCount: 2,
-      activeSlots: initialActiveSlots,
-      upgradeLevels: initialUpgradeLevels,
-      // Active skill
-      skillCooldown: 0,
-      skillMaxCooldown: maxSkillCooldown,
-      skillActiveTimer: 0,
-      skillMaxDuration: maxSkillDuration,
-      isSkillActive: false,
-    };
-  }
 
   public getTwinPositions(): { p1: { x: number; y: number }; p2: { x: number; y: number } } {
-    if (this.player.gameMode !== 'twin_link' || !this.player.twinPilotId) {
-      return {
-        p1: { x: this.player.x, y: this.player.y },
-        p2: { x: this.player.x, y: this.player.y },
-      };
-    }
-    // Side-by-side heavy-battleship silhouette: port wing left, starboard wing right.
-    return {
-      p1: { x: this.player.x - TWIN_WING_DIST, y: this.player.y },
-      p2: { x: this.player.x + TWIN_WING_DIST, y: this.player.y },
-    };
+    return getTwinPositions(this.player);
   }
 
   /** True when the given vessel is flying in the current run (either wing of a twin pair). */
   private hasPilot(id: CharacterId): boolean {
-    if (this.player.characterId === id) return true;
-    return (
-      this.player.gameMode === 'twin_link' && this.player.twinPilotId === id
-    );
+    return hasPilot(this.player, id);
   }
 
-  private isTwinRun(): boolean {
-    return this.player.gameMode === 'twin_link' && !!this.player.twinPilotId;
+  /** True when two vessels are linked in this run. */
+  private isPaired(): boolean {
+    return isPaired(this.player);
+  }
+
+  /** Tuning knobs for the mode this run is flying. */
+  private mode(): GameModeDef {
+    return modeOfPlayer(this.player);
   }
 
   public startNewGame(
@@ -327,7 +190,7 @@ export class GameEngine {
     gameMode: GameMode = 'standard',
     twinPilotId?: CharacterId
   ) {
-    this.player = this.createDefaultPlayer(charId, gameMode, twinPilotId);
+    this.player = createPlayer(charId, gameMode, twinPilotId);
     this.player.x = this.width / 2;
     this.player.y = this.height / 2;
     this.enemies = [];
@@ -378,7 +241,7 @@ export class GameEngine {
     const twinId = this.player.twinPilotId;
 
     this.executeCharSkill(charId);
-    if (this.player.gameMode === 'twin_link' && twinId) {
+    if (this.isPaired() && twinId) {
       this.executeCharSkill(twinId);
     }
     return true;
@@ -775,9 +638,9 @@ export class GameEngine {
     this.player.x += this.player.vx * (dt * 60);
     this.player.y += this.player.vy * (dt * 60);
 
-    // A twin pair keeps both wings on screen, so it needs extra horizontal margin.
+    // A linked pair keeps both wings on screen, so it needs extra horizontal margin.
     const marginY = this.player.radius + 6;
-    const marginX = this.isTwinRun() ? this.player.radius + TWIN_WING_DIST + 6 : marginY;
+    const marginX = this.player.radius + this.mode().wingSpacing + 6;
     this.player.x = Math.max(marginX, Math.min(this.width - marginX, this.player.x));
     this.player.y = Math.max(marginY, Math.min(this.height - marginY, this.player.y));
 
@@ -793,7 +656,7 @@ export class GameEngine {
     this.updateBarragePulse(0, positions.p1, now);
     this.firePilotWeapon(0, positions.p1, now);
 
-    if (this.isTwinRun()) {
+    if (this.isPaired()) {
       this.updateBarragePulse(1, positions.p2, now);
       this.firePilotWeapon(1, positions.p2, now);
     }
@@ -1557,7 +1420,7 @@ export class GameEngine {
           winged = true;
           contactX = wings.p1.x;
           contactY = wings.p1.y;
-        } else if (this.isTwinRun() && d2 < hitSq) {
+        } else if (this.isPaired() && d2 < hitSq) {
           winged = true;
           contactX = wings.p2.x;
           contactY = wings.p2.y;
@@ -1647,43 +1510,22 @@ export class GameEngine {
     this.nextWaveTimer += dt;
     const spawnInterval = Math.max(0.2, 1.2 - (this.gameTime / 180) * 0.85);
 
-    // Twin Link doubles the swarm to match the doubled player firepower.
-    const twin = this.isTwinRun();
-    const maxAlive = twin ? 150 : 95;
-    if (this.enemies.length >= maxAlive) return;
+    // A mode that doubles player firepower also doubles the swarm to match.
+    const mode = this.mode();
+    if (this.enemies.length >= mode.maxAlive) return;
 
     if (this.nextWaveTimer >= spawnInterval) {
       this.nextWaveTimer = 0;
-      let type: EnemyType = 'chaser';
-      const roll = Math.random();
+      const type = pickEnemyType(this.gameTime, Math.random());
 
-      if (this.gameTime < 45) {
-        type = roll < 0.75 ? 'chaser' : 'speeder';
-      } else if (this.gameTime < 90) {
-        if (roll < 0.4) type = 'chaser';
-        else if (roll < 0.65) type = 'speeder';
-        else if (roll < 0.85) type = 'charger';
-        else type = 'tank';
-      } else if (this.gameTime < 150) {
-        if (roll < 0.25) type = 'chaser';
-        else if (roll < 0.45) type = 'speeder';
-        else if (roll < 0.65) type = 'charger';
-        else if (roll < 0.85) type = 'sniper';
-        else type = 'hive';
-      } else {
-        if (roll < 0.2) type = 'chaser';
-        else if (roll < 0.4) type = 'charger';
-        else if (roll < 0.6) type = 'sniper';
-        else if (roll < 0.8) type = 'hive';
-        else type = 'tank';
+      for (let i = 0; i < mode.spawnMultiplier; i++) {
+        this.spawnEnemy(type);
       }
-
-      this.spawnEnemy(type);
-      if (twin) this.spawnEnemy(type);
     }
   }
 
   private spawnEnemy(type: EnemyType) {
+    const def = ENEMY_TYPES[type];
     const pad = 50;
     let x = 0;
     let y = 0;
@@ -1703,63 +1545,7 @@ export class GameEngine {
       y = Math.random() * this.height;
     }
 
-    const growth = this.isTwinRun() ? TWIN_GROWTH_SCALE : 1;
-    const timeScale = 1 + (this.gameTime / 120) * 0.7 * growth;
-    let radius = 14;
-    let hp = 40 * timeScale;
-    let speed = 2.0;
-    let damage = 12;
-    let fillColor = '#160507';
-    let strokeColor = '#ff2b47';
-    let sides = 4;
-    let expValue = 1;
-
-    if (type === 'speeder') {
-      radius = 12;
-      hp = 22 * timeScale;
-      speed = 3.6;
-      damage = 9;
-      fillColor = '#180a03';
-      strokeColor = '#ff8800';
-      sides = 3;
-      expValue = 1;
-    } else if (type === 'tank') {
-      radius = 24;
-      hp = 120 * timeScale;
-      speed = 1.15;
-      damage = 22;
-      fillColor = '#12051b';
-      strokeColor = '#ba38ff';
-      sides = 5;
-      expValue = 3;
-    } else if (type === 'sniper') {
-      radius = 16;
-      hp = 35 * timeScale;
-      speed = 1.7;
-      damage = 16;
-      fillColor = '#031826';
-      strokeColor = '#38bdf8';
-      sides = 6;
-      expValue = 2;
-    } else if (type === 'charger') {
-      radius = 15;
-      hp = 50 * timeScale;
-      speed = 2.0;
-      damage = 20;
-      fillColor = '#221603';
-      strokeColor = '#eab308';
-      sides = 4;
-      expValue = 2;
-    } else if (type === 'hive') {
-      radius = 22;
-      hp = 85 * timeScale;
-      speed = 1.35;
-      damage = 15;
-      fillColor = '#052010';
-      strokeColor = '#22c55e';
-      sides = 7;
-      expValue = 4;
-    }
+    const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
 
     this.enemies.push({
       id: this.nextEnemyId++,
@@ -1768,31 +1554,35 @@ export class GameEngine {
       y,
       vx: 0,
       vy: 0,
-      radius,
+      radius: def.radius,
       hp,
       maxHp: hp,
-      speed,
-      damage,
-      fillColor,
-      strokeColor,
-      points: sides,
-      sides,
+      speed: def.speed,
+      damage: def.damage,
+      fillColor: def.fillColor,
+      strokeColor: def.strokeColor,
+      points: def.sides,
+      sides: def.sides,
       rotation: Math.random() * Math.PI * 2,
       rotSpeed: (Math.random() - 0.5) * 2,
       hitFlashTimer: 0,
-      expValue,
+      expValue: def.expValue,
       state: 'idle',
       stateTimer: 0,
       attackCooldown: 1.5 + Math.random() * 2,
     });
   }
 
+  /** Steepens the enemy stat curve for modes that need a harder late game. */
+  private enemyGrowthScale(): number {
+    return this.mode().growthScale;
+  }
+
   private spawnBoss() {
+    const def = ENEMY_TYPES.boss;
     const x = this.width / 2;
     const y = -80;
-    const growth = this.isTwinRun() ? TWIN_GROWTH_SCALE : 1;
-    const timeScale = 1 + (this.gameTime / 120) * 0.9 * growth;
-    const hp = 850 * timeScale;
+    const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
 
     this.enemies.push({
       id: this.nextEnemyId++,
@@ -1801,19 +1591,19 @@ export class GameEngine {
       y,
       vx: 0,
       vy: 0,
-      radius: 46,
+      radius: def.radius,
       hp,
       maxHp: hp,
-      speed: 1.35,
-      damage: 32,
-      fillColor: '#090212',
-      strokeColor: '#ff0077',
-      points: 8,
-      sides: 8,
+      speed: def.speed,
+      damage: def.damage,
+      fillColor: def.fillColor,
+      strokeColor: def.strokeColor,
+      points: def.sides,
+      sides: def.sides,
       rotation: 0,
       rotSpeed: 1.2,
       hitFlashTimer: 0,
-      expValue: 25,
+      expValue: def.expValue,
       isBoss: true,
       state: 'idle',
       stateTimer: 0,
@@ -1826,7 +1616,7 @@ export class GameEngine {
 
   private updateEnemies(dt: number) {
     const isSlowedBySkill = this.hasPilot('delta_chronos') && this.player.isSkillActive;
-    const isTwin = this.isTwinRun();
+    const isTwin = this.isPaired();
     const wings = this.getTwinPositions();
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -2186,7 +1976,7 @@ export class GameEngine {
     }
 
     const magnetSq = this.player.magnetRadius * this.player.magnetRadius;
-    const isTwin = this.isTwinRun();
+    const isTwin = this.isPaired();
     const wings = this.getTwinPositions();
 
     for (let i = this.gems.length - 1; i >= 0; i--) {
@@ -2405,664 +2195,6 @@ export class GameEngine {
   /*                              RENDER ENGINE                                */
   /* ========================================================================= */
   private render() {
-    const ctx = this.ctx;
-
-    ctx.save();
-    ctx.translate(this.shakeOffset.x, this.shakeOffset.y);
-
-    // 1. Draw Background
-    this.renderBackground(ctx);
-
-    // 2. Draw Singularity Vortices
-    this.renderVortices(ctx);
-
-    // 3. Draw Shockwaves
-    this.renderShockwaves(ctx);
-
-    // 4. Draw Drop Gems
-    this.renderGems(ctx);
-
-    // 5. Draw Enemies & Telegraphs
-    this.renderEnemies(ctx);
-
-    // 6. Draw Orbit Satellites & Drones
-    this.renderSatellites(ctx);
-    this.renderDrones(ctx);
-
-    // 7. Draw Enemy Projectiles
-    this.renderEnemyProjectiles(ctx);
-
-    // 8. Draw Player Projectiles (High-performance neon beam)
-    this.renderProjectiles(ctx);
-
-    // 9. Draw Player
-    this.renderPlayer(ctx);
-
-    // 10. Draw Debris & Spark Particles
-    this.renderParticles(ctx);
-
-    // 11. Draw Floating Combat Text
-    this.renderFloatingTexts(ctx);
-
-    // 12. Draw Pointer Reticle (mouse steering only)
-    this.renderMouseCursor(ctx);
-
-    ctx.restore();
-  }
-
-  /** Geometric reticle substituting for the hidden native cursor. */
-  private renderMouseCursor(ctx: CanvasRenderingContext2D) {
-    if (this.controlMode !== 'mouse' || !this.mouseInside) return;
-
-    const x = this.mouseX;
-    const y = this.mouseY;
-    const pulse = 1 + Math.sin(this.pulseAnimTime * 6) * 0.12;
-
-    ctx.save();
-
-    // Course line from the vessel to the reticle
-    const dist = Math.hypot(this.mouseX - this.player.x, this.mouseY - this.player.y);
-    if (dist > 8) {
-      ctx.strokeStyle = 'rgba(0, 255, 204, 0.22)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([6, 8]);
-      ctx.beginPath();
-      ctx.moveTo(this.player.x, this.player.y);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // Chasing reticle: ring, four bearing ticks and a center pip
-    ctx.translate(x, y);
-    ctx.rotate(this.pulseAnimTime * 2);
-    ctx.strokeStyle = '#00ffcc';
-    ctx.shadowColor = '#00ffcc';
-    ctx.shadowBlur = 12;
-    ctx.lineWidth = 2;
-    const r = 11 * pulse;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    for (let i = 0; i < 4; i++) {
-      const a = (i * Math.PI) / 2;
-      const cos = Math.cos(a);
-      const sin = Math.sin(a);
-      ctx.moveTo(cos * r * 1.25, sin * r * 1.25);
-      ctx.lineTo(cos * r * 1.75, sin * r * 1.75);
-    }
-    ctx.stroke();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(0, 0, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-
-  private renderBackground(ctx: CanvasRenderingContext2D) {
-    ctx.fillStyle = '#05070d';
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    const gridSize = 48;
-    if (this.hasPilot('delta_chronos') && this.player.isSkillActive) {
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.12)';
-    } else {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
-    }
-    ctx.lineWidth = 1;
-
-    ctx.beginPath();
-    for (let x = 0; x <= this.width; x += gridSize) {
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, this.height);
-    }
-    for (let y = 0; y <= this.height; y += gridSize) {
-      ctx.moveTo(0, y);
-      ctx.lineTo(this.width, y);
-    }
-    ctx.stroke();
-
-    const grad = ctx.createRadialGradient(
-      this.width / 2,
-      this.height / 2,
-      10,
-      this.width / 2,
-      this.height / 2,
-      Math.max(this.width, this.height) * 0.75
-    );
-    grad.addColorStop(0, 'rgba(0, 255, 204, 0.025)');
-    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, this.width, this.height);
-  }
-
-  private renderVortices(ctx: CanvasRenderingContext2D) {
-    for (const v of this.vortices) {
-      ctx.save();
-      ctx.translate(v.x, v.y);
-      const rot = this.pulseAnimTime * 6;
-      ctx.rotate(rot);
-
-      ctx.strokeStyle = '#c084fc';
-      ctx.lineWidth = 2.5;
-
-      for (let r = 20; r < 90; r += 20) {
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 1.6);
-        ctx.stroke();
-      }
-
-      ctx.fillStyle = '#0a0212';
-      ctx.strokeStyle = '#a855f7';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(0, 0, 22, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.restore();
-    }
-  }
-
-  private renderShockwaves(ctx: CanvasRenderingContext2D) {
-    for (const s of this.shockwaves) {
-      const alpha = Math.max(0, 1 - s.life / s.maxLife);
-      ctx.save();
-      ctx.strokeStyle = s.color;
-      ctx.globalAlpha = alpha;
-      ctx.lineWidth = s.width * alpha;
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  private renderGems(ctx: CanvasRenderingContext2D) {
-    for (const g of this.gems) {
-      ctx.save();
-      ctx.translate(g.x, g.y);
-      ctx.rotate(g.rotation);
-
-      ctx.fillStyle = g.color;
-      ctx.beginPath();
-      ctx.moveTo(0, -g.radius);
-      ctx.lineTo(g.radius * 0.75, 0);
-      ctx.lineTo(0, g.radius);
-      ctx.lineTo(-g.radius * 0.75, 0);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(0, -g.radius * 0.4);
-      ctx.lineTo(g.radius * 0.3, 0);
-      ctx.lineTo(0, g.radius * 0.4);
-      ctx.lineTo(-g.radius * 0.3, 0);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.restore();
-    }
-  }
-
-  private renderEnemies(ctx: CanvasRenderingContext2D) {
-    for (const e of this.enemies) {
-      ctx.save();
-
-      // ==========================================
-      // TELEGRAPH LINES (SNIPER & CHARGER)
-      // ==========================================
-      if (e.type === 'sniper' && e.state === 'charging' && e.aimAngle !== undefined) {
-        ctx.save();
-        if (e.aimLocked) {
-          // LOCKED STAGE: High-contrast solid red/amber laser with glowing aura
-          ctx.strokeStyle = 'rgba(255, 100, 0, 0.35)';
-          ctx.lineWidth = 7;
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y);
-          ctx.lineTo(e.x + Math.cos(e.aimAngle) * 550, e.y + Math.sin(e.aimAngle) * 550);
-          ctx.stroke();
-
-          ctx.strokeStyle = '#ef4444';
-          ctx.lineWidth = 3.5;
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y);
-          ctx.lineTo(e.x + Math.cos(e.aimAngle) * 550, e.y + Math.sin(e.aimAngle) * 550);
-          ctx.stroke();
-
-          // Lock-on target marker along locked path
-          const lockDist = 200;
-          const lx = e.x + Math.cos(e.aimAngle) * lockDist;
-          const ly = e.y + Math.sin(e.aimAngle) * lockDist;
-          ctx.strokeStyle = '#facc15';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(lx, ly, 7, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
-          // TRACKING STAGE: Soft cyan-red dashed aim line
-          ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([8, 6]);
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y);
-          ctx.lineTo(e.x + Math.cos(e.aimAngle) * 500, e.y + Math.sin(e.aimAngle) * 500);
-          ctx.stroke();
-        }
-        ctx.restore();
-      } else if (e.type === 'charger' && e.state === 'charging' && e.chargeDir) {
-        // Gold warning cone
-        ctx.save();
-        ctx.fillStyle = 'rgba(234, 179, 8, 0.15)';
-        ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
-        ctx.lineWidth = 1.5;
-        const cAngle = Math.atan2(e.chargeDir.y, e.chargeDir.x);
-        ctx.beginPath();
-        ctx.moveTo(e.x, e.y);
-        ctx.arc(e.x, e.y, 160, cAngle - 0.2, cAngle + 0.2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      ctx.translate(e.x, e.y);
-      ctx.rotate(e.rotation);
-
-      const isHitFlash = e.hitFlashTimer > 0;
-      const isFrozen = e.frozenTimer && e.frozenTimer > 0;
-
-      if (isHitFlash) {
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#ffffff';
-      } else if (isFrozen) {
-        ctx.fillStyle = '#083344';
-        ctx.strokeStyle = '#06b6d4';
-      } else {
-        ctx.fillStyle = e.fillColor;
-        ctx.strokeStyle = e.strokeColor;
-      }
-
-      if (e.isBoss) {
-        ctx.shadowColor = isHitFlash ? '#ffffff' : e.strokeColor;
-        ctx.shadowBlur = 20;
-      }
-
-      ctx.lineWidth = e.isBoss ? 4 : 2.5;
-
-      ctx.beginPath();
-      if (e.type === 'boss') {
-        const points = e.sides;
-        const outerR = e.radius;
-        const innerR = e.radius * 0.52;
-        for (let p = 0; p < points * 2; p++) {
-          const r = p % 2 === 0 ? outerR : innerR;
-          const a = (p * Math.PI) / points;
-          if (p === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-          else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-        }
-      } else {
-        const sides = e.sides;
-        for (let s = 0; s < sides; s++) {
-          const a = (s * 2 * Math.PI) / sides;
-          const px = Math.cos(a) * e.radius;
-          const py = Math.sin(a) * e.radius;
-          if (s === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      if (e.isBoss && !isHitFlash) {
-        ctx.restore();
-        ctx.save();
-        ctx.translate(e.x, e.y - e.radius - 16);
-        const hpBarW = 70;
-        const hpPct = Math.max(0, e.hp / e.maxHp);
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        ctx.fillRect(-hpBarW / 2, 0, hpBarW, 5);
-        ctx.fillStyle = '#ff0066';
-        ctx.fillRect(-hpBarW / 2, 0, hpBarW * hpPct, 5);
-        ctx.restore();
-        continue;
-      }
-
-      ctx.restore();
-    }
-  }
-
-  private renderSatellites(ctx: CanvasRenderingContext2D) {
-    if (this.player.orbitSatellites <= 0) return;
-
-    for (const sat of this.satellites) {
-      const satX = this.player.x + Math.cos(sat.angle) * sat.distance;
-      const satY = this.player.y + Math.sin(sat.angle) * sat.distance;
-
-      ctx.save();
-      ctx.translate(satX, satY);
-      ctx.rotate(sat.rotation);
-
-      ctx.strokeStyle = 'rgba(168, 85, 247, 0.2)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(this.player.x - satX, this.player.y - satY);
-      ctx.stroke();
-
-      ctx.fillStyle = '#170624';
-      ctx.strokeStyle = '#c084fc';
-      ctx.lineWidth = 2;
-
-      ctx.beginPath();
-      for (let s = 0; s < 3; s++) {
-        const a = (s * 2 * Math.PI) / 3;
-        const px = Math.cos(a) * sat.radius;
-        const py = Math.sin(a) * sat.radius;
-        if (s === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#f3e8ff';
-      ctx.beginPath();
-      ctx.arc(0, 0, 3, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore();
-    }
-  }
-
-  private renderDrones(ctx: CanvasRenderingContext2D) {
-    for (const drone of this.player.drones) {
-      const dx = this.player.x + Math.cos(drone.angle) * drone.dist;
-      const dy = this.player.y + Math.sin(drone.angle) * drone.dist;
-
-      ctx.save();
-      ctx.translate(dx, dy);
-      ctx.rotate(drone.angle + Math.PI / 2);
-
-      if (drone.type === 'interceptor') {
-        // Fast interceptor triangle drone
-        ctx.fillStyle = '#082f49';
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, -7);
-        ctx.lineTo(5, 6);
-        ctx.lineTo(-5, 6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(0, 0, 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (drone.type === 'railgun') {
-        // Heavy diamond orbital railgun
-        ctx.fillStyle = '#2e1065';
-        ctx.strokeStyle = '#c084fc';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(0, -10);
-        ctx.lineTo(7, 0);
-        ctx.lineTo(0, 10);
-        ctx.lineTo(-7, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#ec4899';
-        ctx.beginPath();
-        ctx.arc(0, 0, 3, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (drone.type === 'guardian') {
-        // Hexagonal aegis drone with defensive emerald deflection field
-        ctx.fillStyle = '#064e3b';
-        ctx.strokeStyle = '#10b981';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        for (let s = 0; s < 6; s++) {
-          const a = (s * Math.PI) / 3;
-          const px = Math.cos(a) * 7.5;
-          const py = Math.sin(a) * 7.5;
-          if (s === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = '#6ee7b7';
-        ctx.beginPath();
-        ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-    }
-  }
-
-  private renderEnemyProjectiles(ctx: CanvasRenderingContext2D) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    for (const ep of this.enemyProjectiles) {
-      ctx.fillStyle = ep.color;
-      ctx.globalAlpha = 0.5;
-      ctx.beginPath();
-      ctx.arc(ep.x, ep.y, ep.radius * 1.8, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 1.0;
-      ctx.beginPath();
-      ctx.arc(ep.x, ep.y, ep.radius * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
-  private getGlowSprite(color: string, isCrit: boolean): HTMLCanvasElement {
-    const key = `${color}_${isCrit}`;
-    let sprite = this.glowCache.get(key);
-    if (sprite) return sprite;
-
-    const size = 64;
-    const offCanvas = document.createElement('canvas');
-    offCanvas.width = size;
-    offCanvas.height = size;
-    const offCtx = offCanvas.getContext('2d')!;
-
-    const center = size / 2;
-    const radius = isCrit ? 6 : 4.5;
-    const blur = isCrit ? 22 : 14;
-
-    offCtx.shadowColor = color;
-    offCtx.shadowBlur = blur;
-    offCtx.fillStyle = isCrit ? '#ffffff' : color;
-    offCtx.beginPath();
-    offCtx.arc(center, center, radius, 0, Math.PI * 2);
-    offCtx.fill();
-
-    offCtx.fillStyle = '#ffffff';
-    offCtx.shadowColor = '#ffffff';
-    offCtx.shadowBlur = 8;
-    offCtx.beginPath();
-    offCtx.arc(center, center, radius * 0.45, 0, Math.PI * 2);
-    offCtx.fill();
-
-    this.glowCache.set(key, offCanvas);
-    return offCanvas;
-  }
-
-  private renderProjectiles(ctx: CanvasRenderingContext2D) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
-
-    for (const p of this.projectiles) {
-      if (p.trail.length > 1) {
-        ctx.strokeStyle = p.color;
-        ctx.lineWidth = p.radius * 2.2;
-        ctx.lineCap = 'round';
-        ctx.globalAlpha = 0.35;
-
-        ctx.beginPath();
-        ctx.moveTo(p.trail[0].x, p.trail[0].y);
-        for (let t = 1; t < p.trail.length; t++) {
-          ctx.lineTo(p.trail[t].x, p.trail[t].y);
-        }
-        ctx.stroke();
-
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = p.radius * 0.9;
-        ctx.globalAlpha = 0.85;
-        ctx.stroke();
-      }
-
-      const sprite = this.getGlowSprite(p.color, p.isCrit);
-      ctx.globalAlpha = 1.0;
-      ctx.drawImage(sprite, p.x - 32, p.y - 32);
-    }
-
-    ctx.restore();
-  }
-
-  private renderPlayer(ctx: CanvasRenderingContext2D) {
-    ctx.save();
-    ctx.translate(this.player.x, this.player.y);
-
-    const breath = 1.0 + Math.sin(this.pulseAnimTime * 3) * 0.04;
-    ctx.scale(breath, breath);
-
-    if (this.player.invincibleTimer > 0) {
-      if (Math.floor(this.player.invincibleTimer * 20) % 2 === 0) {
-        ctx.globalAlpha = 0.4;
-      }
-    }
-
-    // Magnet ring
-    ctx.strokeStyle = 'rgba(0, 255, 204, 0.05)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(0, 0, this.player.magnetRadius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Nanite Shield Hex Envelope
-    if (this.player.naniteShieldActive) {
-      ctx.save();
-      ctx.rotate(-this.pulseAnimTime * 1.5);
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#38bdf8';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      for (let s = 0; s < 6; s++) {
-        const a = (s * 2 * Math.PI) / 6;
-        const px = Math.cos(a) * (this.player.radius * 1.6);
-        const py = Math.sin(a) * (this.player.radius * 1.6);
-        if (s === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    const twinId = this.isTwinRun() ? this.player.twinPilotId : undefined;
-    const wings = this.getTwinPositions();
-    const offX = wings.p1.x - this.player.x;
-    const offY = wings.p1.y - this.player.y;
-
-    ctx.save();
-    ctx.translate(offX, offY);
-    drawCharacterShip(
-      ctx,
-      this.player.characterId,
-      this.player.radius,
-      this.player.angle,
-      this.pulseAnimTime
-    );
-    ctx.restore();
-
-    if (twinId) {
-      ctx.save();
-      ctx.translate(-offX, -offY);
-      drawCharacterShip(
-        ctx,
-        twinId,
-        this.player.radius,
-        this.player.pilot2Angle || 0,
-        this.pulseAnimTime
-      );
-      ctx.restore();
-
-      this.renderTwinArc(ctx, wings.p1, wings.p2);
-    }
-
-    ctx.restore();
-  }
-
-  /** Crackling resonance tether that links the two wings of a Twin Link pair. */
-  private renderTwinArc(
-    ctx: CanvasRenderingContext2D,
-    a: { x: number; y: number },
-    b: { x: number; y: number }
-  ) {
-    drawResonanceArc(
-      ctx,
-      a.x - this.player.x,
-      a.y - this.player.y,
-      b.x - this.player.x,
-      b.y - this.player.y,
-      this.pulseAnimTime,
-      this.player.radius * 1.05
-    );
-  }
-
-  private renderParticles(ctx: CanvasRenderingContext2D) {
-    for (const p of this.particles) {
-      const alpha = Math.max(0, 1 - p.life / p.maxLife);
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rotation);
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = p.color;
-
-      ctx.beginPath();
-      for (let s = 0; s < p.sides; s++) {
-        const a = (s * 2 * Math.PI) / p.sides;
-        const px = Math.cos(a) * p.size;
-        const py = Math.sin(a) * p.size;
-        if (s === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.restore();
-    }
-  }
-
-  private renderFloatingTexts(ctx: CanvasRenderingContext2D) {
-    for (const t of this.floatingTexts) {
-      const alpha = Math.max(0, 1 - t.life / t.maxLife);
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.font = t.isCrit
-        ? '800 16px "JetBrains Mono", monospace'
-        : '600 12px "JetBrains Mono", monospace';
-      ctx.fillStyle = t.color;
-      ctx.textAlign = 'center';
-      ctx.fillText(t.text, t.x, t.y);
-      ctx.restore();
-    }
+    renderScene(this.ctx, this);
   }
 }

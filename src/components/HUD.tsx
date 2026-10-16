@@ -1,7 +1,8 @@
 import React from 'react';
 import { Player } from '../game/types';
 import { getCharacterDef } from '../game/characters';
-import { getPilotWeaponStats } from '../game/pilotStats';
+import { getPilotWeaponStats } from '../game/pilots';
+import { isPaired } from '../game/modes';
 import {
   Volume2,
   VolumeX,
@@ -47,7 +48,7 @@ export const HUD: React.FC<HUDProps> = ({
 }) => {
   const char = getCharacterDef(player.characterId);
 
-  const twinId = player.gameMode === 'twin_link' ? player.twinPilotId : undefined;
+  const twinId = isPaired(player) ? player.twinPilotId : undefined;
   const twinDef = twinId ? getCharacterDef(twinId) : null;
   const twinStats = twinId ? getPilotWeaponStats(player, 1) : null;
 

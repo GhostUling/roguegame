@@ -19,13 +19,6 @@ export interface CharacterDef {
   desc: string;
   color: string;
   accentColor: string;
-  shapeType:
-    | 'octagram'
-    | 'hexagon'
-    | 'viper_triangle'
-    | 'chronos_star'
-    | 'carrier_decagram'
-    | 'aurora_crystal';
   baseStats: {
     hp: number;
     speed: number;

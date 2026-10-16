@@ -1,5 +1,6 @@
 import React from 'react';
 import { GameStats } from '../game/types';
+import { isPaired } from '../game/modes';
 import { sound } from '../game/audio';
 import { RotateCcw, Home, Trophy, Skull, Clock, Zap, Target, Bookmark, Users } from 'lucide-react';
 
@@ -26,7 +27,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
   const isNewRecord = stats.score > highScore;
 
-  const isTwin = stats.gameMode === 'twin_link' && !!stats.twinPilotId;
+  const isTwin = isPaired(stats);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl">

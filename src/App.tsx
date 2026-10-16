@@ -7,6 +7,7 @@ import { GameEngine } from './game/engine';
 import { sound } from './game/audio';
 import { Player, UpgradeOption, GameStats, CharacterId, GameMode } from './game/types';
 import { getRandomUpgrades } from './game/upgrades';
+import { modeForPilots } from './game/modes';
 import { VirtualJoystick } from './game/joystick';
 import { HUD } from './components/HUD';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -174,7 +175,7 @@ export default function App() {
 
   const startGameWithChar = useCallback(
     (charId: CharacterId, twinId?: CharacterId) => {
-      const mode: GameMode = twinId ? 'twin_link' : 'standard';
+      const mode: GameMode = modeForPilots(twinId);
       const carrierPilots = [charId, twinId].filter((c) => c === 'epsilon_carrier').length;
       const initialUpgrades: Record<string, number> =
         carrierPilots > 0 ? { summon_drone: carrierPilots } : {};

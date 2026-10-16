@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CHARACTERS, getCharacterDef } from '../game/characters';
 import { CharacterId, GameMode } from '../game/types';
+import { modeOf } from '../game/modes';
 import { sound } from '../game/audio';
-import { drawCharacterShip, drawResonanceArc } from '../game/shipRender';
+import { drawCharacterShip } from '../game/characters';
+import { drawResonanceArc } from '../game/resonanceArc';
 import { Play, ChevronLeft, ChevronRight, Zap, Sparkles, ArrowLeft, Users, RefreshCw } from 'lucide-react';
 
 interface CharacterSelectScreenProps {
@@ -16,7 +18,7 @@ export const CharacterSelectScreen: React.FC<CharacterSelectScreenProps> = ({
   onSelectCharacter,
   onBack,
 }) => {
-  const isTwin = mode === 'twin_link';
+  const isTwin = modeOf(mode).pilotSlots === 2;
 
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [activeSlot, setActiveSlot] = useState<0 | 1>(0);

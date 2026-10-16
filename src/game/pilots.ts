@@ -1,5 +1,34 @@
 import { CharacterId, Player } from './types';
 import { getCharacterDef } from './characters';
+import { isPaired, modeOfPlayer } from './modes';
+
+/** True when the given chassis is flying in this run, on either wing. */
+export function hasPilot(player: Player, id: CharacterId): boolean {
+  if (player.characterId === id) return true;
+  return isPaired(player) && player.twinPilotId === id;
+}
+
+/**
+ * Screen positions of both wings. A solo vessel reports its own centre twice,
+ * so callers can treat the pair as a single code path.
+ */
+export function getTwinPositions(player: Player): {
+  p1: { x: number; y: number };
+  p2: { x: number; y: number };
+} {
+  const spacing = modeOfPlayer(player).wingSpacing;
+  if (spacing <= 0) {
+    return {
+      p1: { x: player.x, y: player.y },
+      p2: { x: player.x, y: player.y },
+    };
+  }
+  // Side-by-side heavy-battleship silhouette: port wing left, starboard wing right.
+  return {
+    p1: { x: player.x - spacing, y: player.y },
+    p2: { x: player.x + spacing, y: player.y },
+  };
+}
 
 export interface PilotWeaponStats {
   charId: CharacterId;

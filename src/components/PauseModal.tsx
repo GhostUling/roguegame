@@ -3,6 +3,7 @@ import { Player } from '../game/types';
 import { sound } from '../game/audio';
 import { ALL_UPGRADES, UpgradeDefinition } from '../game/upgrades';
 import { getCharacterDef } from '../game/characters';
+import { isPaired } from '../game/modes';
 import {
   Play,
   RotateCcw,
@@ -49,10 +50,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   const [activeTab, setActiveTab] = useState<'upgrades' | 'stats'>('upgrades');
 
   const charDef = getCharacterDef(player.characterId);
-  const twinDef =
-    player.gameMode === 'twin_link' && player.twinPilotId
-      ? getCharacterDef(player.twinPilotId)
-      : null;
+  const twinDef = isPaired(player) ? getCharacterDef(player.twinPilotId!) : null;
   const currentUpgrades = player.upgradeLevels || upgradeLevels || {};
   const upgradeEntries = Object.entries(currentUpgrades).filter(([, lvl]) => lvl > 0);
 
