@@ -18,7 +18,6 @@ import {
   MeltCore,
   Turret,
   Clone,
-  OrbitShell,
   Ally,
 } from './types';
 import { sound } from './audio';
@@ -39,7 +38,6 @@ import { HYPERCRIT_MULTIPLIER } from './overflowUpgrades';
 import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from './turrets';
 import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from './gridVerdict';
 import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from './clones';
-import { ORBIT_ANGULAR_SPEED, ORBIT_SHELL_RADIUS, orbitRehitMs, orbitShellCount } from './orbitCage';
 import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from './allies';
 import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './enemyTypes';
 import { renderScene } from './render/renderer';
@@ -81,7 +79,6 @@ export class GameEngine {
   public meltCores: MeltCore[] = [];
   public turrets: Turret[] = [];
   public clones: Clone[] = [];
-  public orbitShells: OrbitShell[] = [];
   public allies: Ally[] = [];
 
   // System
@@ -128,7 +125,6 @@ export class GameEngine {
   private nextMeltId: number = 1;
   private nextTurretId: number = 1;
   private nextCloneId: number = 1;
-  private nextOrbitShellId: number = 1;
   private nextAllyId: number = 1;
   /** Lance Kappa's annihilation spear counts down before it fires. */
   private spearWindup: number = 0;
@@ -241,7 +237,6 @@ export class GameEngine {
     this.meltCores = [];
     this.turrets = [];
     this.clones = [];
-    this.orbitShells = [];
     this.allies = [];
     this.spearWindup = 0;
     this.gameTime = 0;
@@ -683,10 +678,6 @@ export class GameEngine {
     // 5. Auto Shoot & Barrage
     this.updateAutoShooting();
 
-    // 5b. Orbit Cage shells. They replace the volley rather than accompany it, so
-    //     they tick with the weapon that feeds them.
-    this.updateOrbitShells(dt);
-
     // 6. Update Orbit Satellites
     this.updateSatellites(dt);
 
@@ -995,11 +986,10 @@ export class GameEngine {
   }
 
   /**
-   * One damage roll, shared by the straight volley and the Orbit Cage shells so
-   * the crit rule (and Hypercrit's upgrade of it) exists in exactly one place.
-   * `critMultiplier` is passed in because a twin pair's second wing carries its
-   * own, and `overload` is the Iota shell tier, which always crits and can never
-   * escalate into a hypercrit.
+   * One damage roll for the player's own fire, so the crit rule (and Hypercrit's
+   * upgrade of it) exists in exactly one place. `critMultiplier` is passed in
+   * because a twin pair's second wing carries its own, and `overload` is the Iota
+   * shell tier, which always crits and can never escalate into a hypercrit.
    */
   private rollDamageTier(
     critChance: number,
@@ -1121,15 +1111,6 @@ export class GameEngine {
         this.player.kappaShotCharge = 0;
         this.fireLanceRay(origin, baseAngle, stats.bulletDamage);
       }
-    }
-
-    // Orbit Cage replaces the volley outright: the shells are maintained every
-    // frame in updateOrbitShells, so a shot here only spends the trigger. Both
-    // chassis counters above still ran, which is what keeps a Kappa or Iota hull
-    // from losing its passive to this card.
-    if (this.player.orbitShellRadius > 0) {
-      sound.playShoot(0.7);
-      return;
     }
 
     let volleyHypercrit = false;
@@ -1466,92 +1447,6 @@ export class GameEngine {
     this.player.gridFlash = GRID_FLASH;
     this.triggerScreenShake(cut > 0 ? 4 : 2);
     if (cut > 0) sound.playLaserShot();
-  }
-
-  /**
-   * Orbit Cage: keep exactly as many shells circling the hull as the player has
-   * barrels, and let each one bite a given enemy no more often than the player's
-   * own fire interval. The count tracks the weapon, so picking up a barrel card
-   * afterwards grows the cage instead of leaving it stale.
-   */
-  private updateOrbitShells(dt: number) {
-    const target = this.player.orbitShellRadius > 0 ? orbitShellCount(this.player) : 0;
-
-    while (this.orbitShells.length > target) {
-      this.orbitShells.pop();
-    }
-    while (this.orbitShells.length < target) {
-      this.orbitShells.push({
-        id: this.nextOrbitShellId++,
-        angle: (this.orbitShells.length * Math.PI * 2) / Math.max(1, target),
-        lastHit: new Map(),
-      });
-    }
-    if (this.orbitShells.length === 0) return;
-
-    const now = this.gameClockMs;
-    const radius = this.player.orbitShellRadius;
-    const rehit = orbitRehitMs(this.player);
-    const cx = this.player.x;
-    const cy = this.player.y;
-    // Every shell turns at the same rate, which is what keeps them evenly spread
-    // instead of bunching up as the barrel count grows.
-    const step = ORBIT_ANGULAR_SPEED * dt;
-
-    for (const shell of this.orbitShells) {
-      shell.angle = (shell.angle + step) % (Math.PI * 2);
-      const sx = cx + Math.cos(shell.angle) * radius;
-      const sy = cy + Math.sin(shell.angle) * radius;
-
-      if (this.enemies.length === 0) continue;
-
-      for (let i = this.enemies.length - 1; i >= 0; i--) {
-        const e = this.enemies[i];
-        const dx = e.x - sx;
-        const dy = e.y - sy;
-        if (dx > 40 || dx < -40 || dy > 40 || dy < -40) continue;
-
-        const reach = e.radius + ORBIT_SHELL_RADIUS;
-        if (dx * dx + dy * dy > reach * reach) continue;
-
-        const last = shell.lastHit.get(e.id);
-        if (last !== undefined && now - last < rehit) continue;
-        shell.lastHit.set(e.id, now);
-
-        const tier = this.rollDamageTier(this.player.critChance, this.player.critMultiplier);
-        if (tier.isHypercrit) this.triggerHypercrit();
-        if (tier.isCrit && this.player.critFreezeTime > 0) {
-          this.player.freezeTimer = Math.max(this.player.freezeTimer, this.player.critFreezeTime);
-        }
-
-        const dmg = Math.round(this.player.bulletDamage * tier.scale);
-        e.hitFlashTimer = 0.08;
-        this.damageEnemy(e, Math.round(dmg * this.statusDamageMultiplier(e)));
-        this.spawnImpactSparks(sx, sy, '#c084fc', 2);
-
-        if (this.floatingTexts.length < 20) {
-          this.addFloatingText(
-            e.x,
-            e.y - 12,
-            tier.isCrit ? `CRIT ${dmg}` : `${dmg}`,
-            tier.isCrit ? '#ffea00' : '#ffffff',
-            tier.isCrit
-          );
-        }
-
-        if (e.hp <= 0) this.killEnemy(e, i);
-      }
-    }
-
-    // The re-hit ledger only needs to remember the last interval's worth of
-    // contacts; pruning keeps a long run from growing one map per shell forever.
-    for (const shell of this.orbitShells) {
-      if (shell.lastHit.size > 16) {
-        for (const [id, time] of shell.lastHit) {
-          if (now - time >= rehit) shell.lastHit.delete(id);
-        }
-      }
-    }
   }
 
   /** Mirror Self: deploy on the card's clock, then each clone fights on its own. */

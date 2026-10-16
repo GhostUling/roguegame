@@ -84,7 +84,6 @@ describe('every overflow level does something', () => {
       'gambler_pact',
       'prism_turret',
       'grid_verdict',
-      'orbit_cage',
       'mirror_self',
       'necro_fleet',
     ];
@@ -171,7 +170,6 @@ describe('overflow per-level ladders', () => {
     expect(atEachLevel('mirror_self', (p) => p.cloneInterval)).toEqual([40, 30, 20]);
     expect(atEachLevel('mirror_self', (p) => p.cloneDamageScale)).toEqual([0.5, 0.6, 0.7]);
     expect(atEachLevel('necro_fleet', (p) => p.necroChance)).toEqual([0.25, 0.35, 0.5]);
-    expect(atEachLevel('orbit_cage', (p) => p.orbitShellRadius)).toEqual([70, 110, 150]);
   });
 });
 

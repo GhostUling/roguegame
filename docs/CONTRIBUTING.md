@@ -49,7 +49,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 codexData） |
 | `overflowUpgrades.ts` | 溢流模式专属卡池 18 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 modes） |
 | `upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
-| `turrets.ts` / `gridVerdict.ts` / `clones.ts` / `orbitCage.ts` / `allies.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、轨道弹转速与再命中闸门、友军属性推导），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
+| `turrets.ts` / `gridVerdict.ts` / `clones.ts` / `allies.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、友军属性推导），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
 | `render/friendlyMarker.ts` | 我方单位的统一标记（色值 / 环距 / 线宽 / `drawFriendlyMarker`），炮台、分身、友军三处渲染共用 | 各单位自身的造型 |
 | `player.ts` | `createPlayer`：把选定机体（单机或双机）折算成初始 `Player` | 逐帧状态变更 |
 | `pilots.ts` | `hasPilot` / `getTwinPositions` / `getPilotWeaponStats` | 引擎状态读写、模式判定（在 modes） |

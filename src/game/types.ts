@@ -203,7 +203,6 @@ export interface Player {
   cloneInterval: number; // seconds between mirror clones, 0 = card not taken
   cloneTimer: number;
   cloneDamageScale: number;
-  orbitShellRadius: number; // orbit radius in px; 0 = straight fire, the default
   necroChance: number; // chance a kill revives on the player's side, 0 = off
   massRoundScale: number; // px added to the hit radius per 100 damage
   hypercritChance: number;
@@ -420,18 +419,6 @@ export interface Clone {
   maxLife: number;
   lastFireTime: number;
   aimAngle: number;
-}
-
-/**
- * One of Orbit Cage's shells: a round circling the hull that never expires. Its
- * reach is the player's shot, so there is nothing here but an angle and the
- * per-enemy re-hit bookkeeping.
- */
-export interface OrbitShell {
-  id: number;
-  angle: number;
-  /** enemyId → clock ms of the last hit, so one shell cannot shred one enemy. */
-  lastHit: Map<number, number>;
 }
 
 /** A revived enemy fighting on the player's side. */

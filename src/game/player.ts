@@ -196,7 +196,6 @@ export function createPlayer(
     cloneInterval: 0,
     cloneTimer: 0,
     cloneDamageScale: 0,
-    orbitShellRadius: 0,
     necroChance: 0,
     massRoundScale: 0,
     hypercritChance: 0,

@@ -13,7 +13,6 @@ import {
   MeltCore,
   Turret,
   Clone,
-  OrbitShell,
   Ally,
 } from '../types';
 import { drawCharacterShip, getCharacterDef } from '../characters';
@@ -23,7 +22,6 @@ import { isPaired } from '../modes';
 import { TURRET_FADE } from '../turrets';
 import { GRID_CELL, GRID_FLASH } from '../gridVerdict';
 import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
-import { ORBIT_SHELL_RADIUS } from '../orbitCage';
 
 /**
  * Everything the renderer reads. GameEngine satisfies this shape structurally, so
@@ -44,7 +42,6 @@ export interface RenderState {
   meltCores: MeltCore[];
   turrets: Turret[];
   clones: Clone[];
-  orbitShells: OrbitShell[];
   allies: Ally[];
   width: number;
   height: number;
@@ -93,9 +90,6 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   // 9. Draw Enemy Projectiles
   renderEnemyProjectiles(ctx, frame);
 
-  // 10. Draw Player Projectiles & Orbit Shells (high-performance neon beam)
-  renderProjectiles(ctx, frame);
-  renderOrbitShells(ctx, frame);
 
   // 11. Draw Energy Lances & Rays
   renderBeams(ctx, frame);
@@ -258,36 +252,6 @@ export function renderAllies(ctx: CanvasRenderingContext2D, frame: RenderState) 
   }
 }
 
-/** Orbit Cage's shells: cached glow sprites riding a faint orbit line. */
-export function renderOrbitShells(ctx: CanvasRenderingContext2D, frame: RenderState) {
-  if (frame.orbitShells.length === 0) return;
-
-  const radius = frame.player.orbitShellRadius;
-  const cx = frame.player.x;
-  const cy = frame.player.y;
-
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-
-  ctx.strokeStyle = '#c084fc';
-  ctx.globalAlpha = 0.16;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-  ctx.stroke();
-
-  const sprite = getGlowSprite('#c084fc', true);
-  ctx.globalAlpha = 1;
-  for (const shell of frame.orbitShells) {
-    const x = cx + Math.cos(shell.angle) * radius;
-    const y = cy + Math.sin(shell.angle) * radius;
-    ctx.drawImage(sprite, x - 32, y - 32);
-  }
-
-  ctx.restore();
-}
-
-/** Geometric reticle substituting for the hidden native cursor. */
 export function renderMouseCursor(ctx: CanvasRenderingContext2D, frame: RenderState) {
   if (frame.controlMode !== 'mouse' || !frame.mouseInside) return;
 

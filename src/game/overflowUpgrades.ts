@@ -40,7 +40,6 @@ const LVL_GRID_INTERVAL = [10, 7];
 const LVL_GRID_DAMAGE = [2.0, 3.0];
 const LVL_CLONE_INTERVAL = [40, 30, 20];
 const LVL_CLONE_DAMAGE = [0.5, 0.6, 0.7];
-const LVL_ORBIT_RADIUS = [70, 110, 150];
 const LVL_NECRO_CHANCE = [0.25, 0.35, 0.5];
 
 /** Damage scale the Overflow cards apply to their own secondary payloads. */
@@ -203,21 +202,6 @@ export const OVERFLOW_UPGRADES: UpgradeDefinition[] = [
       p.gridInterval = atLevel(LVL_GRID_INTERVAL, lvl);
       p.gridTimer = atLevel(LVL_GRID_INTERVAL, lvl);
       p.gridDamageScale = atLevel(LVL_GRID_DAMAGE, lvl);
-    },
-  },
-  {
-    id: 'orbit_cage',
-    key: 'orbit_cage',
-    name: 'Orbit Cage',
-    nameZh: '轨道囚笼',
-    desc: '普攻不再向远处飞出去，改为绕着机体永续旋转的轨道弹。同一目标的再命中间隔就是你的开火间隔，所以射速越快，转速不变、命中越密。',
-    category: 'energy',
-    rarity: 'epic',
-    maxLevel: 3,
-    statDiffText: (p, lvl = 1) =>
-      `普攻改为轨道弹 · 半径 ${atLevel(LVL_ORBIT_RADIUS, lvl)}px · ${Math.max(1, Math.min(16, p.bulletCount))} 颗 · 再命中间隔 ${Math.max(120, Math.round(p.fireRate))}ms`,
-    apply: (p, lvl) => {
-      p.orbitShellRadius = atLevel(LVL_ORBIT_RADIUS, lvl);
     },
   },
   {
