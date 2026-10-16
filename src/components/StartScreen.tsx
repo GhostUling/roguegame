@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { sound } from '../game/audio';
 import { GameMode } from '../game/types';
 import { GAME_MODES } from '../game/modes';
-import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users } from 'lucide-react';
+import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame } from 'lucide-react';
 
 /** Tailwind classes per mode accent; the mode table only carries the token. */
 const ACCENT_CLASSES = {
@@ -15,6 +15,11 @@ const ACCENT_CLASSES = {
     card: 'border-fuchsia-400 shadow-[0_0_22px_rgba(232,121,249,0.22)]',
     label: 'text-fuchsia-300',
     icon: Users,
+  },
+  amber: {
+    card: 'border-amber-400 shadow-[0_0_22px_rgba(251,191,36,0.22)]',
+    label: 'text-amber-300',
+    icon: Flame,
   },
 } as const;
 
@@ -102,7 +107,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           <div className="text-[11px] font-mono-numbers uppercase tracking-widest text-slate-500 text-left">
             作战模式 // BATTLE MODE
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {Object.values(GAME_MODES).map((m) => {
               const accent = ACCENT_CLASSES[m.accent];
               const ModeIcon = accent.icon;

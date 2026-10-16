@@ -175,7 +175,9 @@ export default function App() {
 
   const startGameWithChar = useCallback(
     (charId: CharacterId, twinId?: CharacterId) => {
-      const mode: GameMode = modeForPilots(twinId);
+      // The mode picked on the title screen decides the run; the second pilot
+      // only says which two-pilot mode this is.
+      const mode: GameMode = modeForPilots(gameMode, twinId);
       const carrierPilots = [charId, twinId].filter((c) => c === 'epsilon_carrier').length;
       const initialUpgrades: Record<string, number> =
         carrierPilots > 0 ? { summon_drone: carrierPilots } : {};
@@ -196,7 +198,7 @@ export default function App() {
         setPlayerState(engineRef.current.player);
       }
     },
-    []
+    [gameMode]
   );
 
   const toggleMute = useCallback(() => {

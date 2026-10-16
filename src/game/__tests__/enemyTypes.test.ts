@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMY_TYPES, enemyHpFor, pickEnemyType } from '../enemyTypes';
+import {
+  ENEMY_TYPES,
+  enemyDamageFor,
+  enemyHpFor,
+  enemySpeedFor,
+  pickEnemyType,
+} from '../enemyTypes';
 
 const ALL_TYPES = ['boss', 'charger', 'chaser', 'hive', 'sniper', 'speeder', 'tank'];
 
@@ -71,5 +77,37 @@ describe('enemyHpFor', () => {
   it('steepens the curve by the growth scale', () => {
     expect(enemyHpFor(chaser, 120, 1.5)).toBeCloseTo(chaser.hp * 2.05);
     expect(enemyHpFor(ENEMY_TYPES.boss, 240, 1.5)).toBeCloseTo(ENEMY_TYPES.boss.hp * 3.7);
+  });
+});
+
+describe('enemy threat curves', () => {
+  const speeder = ENEMY_TYPES.speeder;
+
+  it('leaves damage and speed flat when the mode keeps threats off', () => {
+    // Every mode predating Overflow flies with threatScale 0, so their enemies
+    // must be exactly as they always were, however long the run lasts.
+    expect(enemyDamageFor(speeder, 300, 0)).toBe(speeder.damage);
+    expect(enemySpeedFor(speeder, 300, 0)).toBe(speeder.speed);
+  });
+
+  it('adds the documented share of base damage every minute', () => {
+    expect(enemyDamageFor(speeder, 60, 1)).toBe(Math.round(speeder.damage * 1.08));
+    expect(enemyDamageFor(speeder, 300, 1)).toBe(Math.round(speeder.damage * 1.4));
+  });
+
+  it('climbs speed at its own, steeper rate', () => {
+    expect(enemySpeedFor(speeder, 300, 1)).toBeCloseTo(speeder.speed * 1.45);
+  });
+
+  it('keeps damage a whole number, so the damage numbers stay readable', () => {
+    for (const t of [7, 63, 181, 299]) {
+      expect(Number.isInteger(enemyDamageFor(ENEMY_TYPES.tank, t, 1)), `t=${t}`).toBe(true);
+    }
+  });
+
+  it('lets a speeder outpace a tank over a long run', () => {
+    const speederGain = enemySpeedFor(speeder, 300, 1) / speeder.speed;
+    const tankGain = enemySpeedFor(ENEMY_TYPES.tank, 300, 1) / ENEMY_TYPES.tank.speed;
+    expect(speederGain).toBeGreaterThan(tankGain);
   });
 });

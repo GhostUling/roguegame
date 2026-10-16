@@ -30,7 +30,7 @@ import {
   railgunShotDamage,
 } from './drones';
 import { GameModeDef, isPaired, modeOfPlayer } from './modes';
-import { ENEMY_TYPES, EnemyTypeDef, enemyHpFor, pickEnemyType } from './enemyTypes';
+import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './enemyTypes';
 import { renderScene } from './render/renderer';
 
 export interface GameEngineCallbacks {
@@ -2012,6 +2012,7 @@ export class GameEngine {
     }
 
     const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
+    const threat = this.enemyThreatScale();
 
     this.enemies.push({
       id: this.nextEnemyId++,
@@ -2023,8 +2024,8 @@ export class GameEngine {
       radius: def.radius,
       hp,
       maxHp: hp,
-      speed: def.speed,
-      damage: def.damage,
+      speed: enemySpeedFor(def, this.gameTime, threat),
+      damage: enemyDamageFor(def, this.gameTime, threat),
       fillColor: def.fillColor,
       strokeColor: def.strokeColor,
       points: def.sides,
@@ -2042,6 +2043,11 @@ export class GameEngine {
   /** Steepens the enemy stat curve for modes that need a harder late game. */
   private enemyGrowthScale(): number {
     return this.mode().growthScale;
+  }
+
+  /** How fast enemy damage and speed climb over the run. 0 keeps them flat. */
+  private enemyThreatScale(): number {
+    return this.mode().threatScale;
   }
 
   private spawnBoss() {

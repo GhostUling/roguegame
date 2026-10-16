@@ -15,6 +15,7 @@ describe('game mode table', () => {
       expect(def.spawnMultiplier).toBeGreaterThanOrEqual(1);
       expect(def.maxAlive).toBeGreaterThan(def.spawnMultiplier);
       expect(def.growthScale).toBeGreaterThanOrEqual(1);
+      expect(def.threatScale).toBeGreaterThanOrEqual(0);
       expect(def.name.length).toBeGreaterThan(0);
       expect(def.desc.length).toBeGreaterThan(0);
     }
@@ -37,10 +38,29 @@ describe('game mode table', () => {
     expect(solo.pooledHp).toBe(false);
   });
 
+  it('makes overflow the densest mode, and the only one whose enemies bite harder', () => {
+    const solo = GAME_MODES.standard;
+    const overflow = GAME_MODES.overflow;
+    expect(overflow.spawnMultiplier).toBeGreaterThan(solo.spawnMultiplier);
+    expect(overflow.maxAlive).toBeGreaterThan(GAME_MODES.twin_link.maxAlive);
+    expect(overflow.growthScale).toBeGreaterThan(solo.growthScale);
+    expect(overflow.threatScale).toBeGreaterThan(0);
+    expect(overflow.pilotSlots).toBe(1);
+  });
+
+  it('holds enemy damage and speed flat in every mode that predates the curves', () => {
+    // threatScale is what gates the per-type damage/speed growth rates, so these
+    // two have to stay at 0 or the standard and twin runs would quietly get
+    // harder the longer they lasted.
+    expect(GAME_MODES.standard.threatScale).toBe(0);
+    expect(GAME_MODES.twin_link.threatScale).toBe(0);
+  });
+
   it('falls back to the standard run for an unknown mode id', () => {
     expect(modeOf(undefined)).toBe(GAME_MODES.standard);
     expect(modeOf('standard')).toBe(GAME_MODES.standard);
     expect(modeOf('twin_link')).toBe(GAME_MODES.twin_link);
+    expect(modeOf('overflow')).toBe(GAME_MODES.overflow);
   });
 });
 
@@ -62,11 +82,26 @@ describe('modeOfPlayer', () => {
     expect(modeOfPlayer({ gameMode: 'twin_link' })).toBe(GAME_MODES.standard);
     expect(modeOfPlayer({ gameMode: 'standard' })).toBe(GAME_MODES.standard);
   });
+
+  it('reports a solo mode that is not standard from the run it recorded', () => {
+    // Without this the engine reads standard's knobs for an Overflow run, and
+    // the mode silently does nothing.
+    expect(modeOfPlayer({ gameMode: 'overflow' })).toBe(GAME_MODES.overflow);
+    expect(modeOfPlayer({ gameMode: 'overflow', twinPilotId: 'gamma_viper' })).toBe(
+      GAME_MODES.overflow
+    );
+  });
 });
 
 describe('modeForPilots', () => {
-  it('links the run only when a second pilot was picked', () => {
-    expect(modeForPilots('zeta_aurora')).toBe('twin_link');
+  it('links the run only when a second pilot was picked and no mode was chosen', () => {
+    expect(modeForPilots(undefined, 'zeta_aurora')).toBe('twin_link');
     expect(modeForPilots()).toBe('standard');
+  });
+
+  it('never overrides the mode the title screen picked', () => {
+    expect(modeForPilots('overflow')).toBe('overflow');
+    expect(modeForPilots('overflow', 'zeta_aurora')).toBe('overflow');
+    expect(modeForPilots('standard', 'zeta_aurora')).toBe('standard');
   });
 });

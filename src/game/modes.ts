@@ -23,10 +23,15 @@ export interface GameModeDef {
   maxAlive: number;
   /** Multiplier on the enemy hp/speed growth curve over time. */
   growthScale: number;
+  /**
+   * Multiplier on the enemy damage and speed growth rates. 0 keeps both flat,
+   * which is how every mode behaved before the Overflow design added the curves.
+   */
+  threatScale: number;
   /** Max HP is the sum of both pilots' chassis HP. */
   pooledHp: boolean;
   /** UI hue token; the screens map it to Tailwind classes. */
-  accent: 'cyan' | 'fuchsia';
+  accent: 'cyan' | 'fuchsia' | 'amber';
 }
 
 export const GAME_MODES: Record<GameMode, GameModeDef> = {
@@ -40,6 +45,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     spawnMultiplier: 1,
     maxAlive: 95,
     growthScale: 1,
+    threatScale: 0,
     pooledHp: false,
     accent: 'cyan',
   },
@@ -53,8 +59,23 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     spawnMultiplier: 2,
     maxAlive: 150,
     growthScale: 1.5,
+    threatScale: 0,
     pooledHp: true,
     accent: 'fuchsia',
+  },
+  overflow: {
+    id: 'overflow',
+    name: '溢流',
+    tag: 'OVERFLOW',
+    desc: '反应堆越过临界点：怪潮四倍密度，敌人随时间越打越痛，升级快得离谱。',
+    pilotSlots: 1,
+    wingSpacing: 0,
+    spawnMultiplier: 4.5,
+    maxAlive: 260,
+    growthScale: 3.0,
+    threatScale: 1.0,
+    pooledHp: false,
+    accent: 'amber',
   },
 };
 
@@ -63,8 +84,13 @@ export function modeOf(mode?: GameMode): GameModeDef {
   return GAME_MODES[mode ?? 'standard'];
 }
 
-/** The mode a pilot selection implies: picking a second vessel links the run. */
-export function modeForPilots(twinPilotId?: CharacterId): GameMode {
+/**
+ * The mode a pilot selection implies. An explicit pick from the title screen
+ * always wins; without one, a second pilot links the run and a lone pilot flies
+ * the standard run.
+ */
+export function modeForPilots(selected?: GameMode, twinPilotId?: CharacterId): GameMode {
+  if (selected) return selected;
   return twinPilotId ? 'twin_link' : 'standard';
 }
 
@@ -73,7 +99,16 @@ export function modeForPilots(twinPilotId?: CharacterId): GameMode {
  * Also usable on the stat snapshots the game-over screen shows.
  */
 export function modeOfPlayer(player: Pick<Player, 'gameMode' | 'twinPilotId'>): GameModeDef {
-  return GAME_MODES[isPaired(player) ? 'twin_link' : 'standard'];
+  // A real pair always flies twin link.
+  if (isPaired(player)) return GAME_MODES.twin_link;
+
+  // Otherwise trust the mode the run recorded — that is the only way a solo
+  // mode that is not `standard` (Overflow) can reach its own knobs. A recorded
+  // `twin_link` without a partner is a link request that never linked, which
+  // createPlayer already downgrades, so it falls back to standard here too.
+  const recorded = player.gameMode;
+  if (recorded && recorded !== 'twin_link') return GAME_MODES[recorded];
+  return GAME_MODES.standard;
 }
 
 /** True when two vessels are actually flying linked, not merely requested. */

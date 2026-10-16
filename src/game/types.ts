@@ -71,7 +71,7 @@ export interface Drone {
   lastMissileTime?: number;
 }
 
-export type GameMode = 'standard' | 'twin_link';
+export type GameMode = 'standard' | 'twin_link' | 'overflow';
 
 export interface Player {
   characterId: CharacterId;

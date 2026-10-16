@@ -8,6 +8,13 @@ export interface EnemyTypeDef {
   hp: number;
   /** Fraction of base HP added per two minutes of elapsed run time. */
   hpGrowthPerMin: number;
+  /**
+   * Fraction of base damage added per minute. Gated by the mode's `threatScale`,
+   * so a mode that wants flat enemies (every mode before Overflow) sets it to 0.
+   */
+  damageGrowthPerMin: number;
+  /** Fraction of base speed added per minute, gated the same way. */
+  speedGrowthPerMin: number;
   speed: number;
   damage: number;
   radius: number;
@@ -20,11 +27,16 @@ export interface EnemyTypeDef {
 /**
  * Single source of truth for enemy statistics. Adding a variant means adding a
  * row here; nothing else in the codebase should hardcode enemy numbers.
+ *
+ * Growth rates are per type on purpose: a speeder is meant to become genuinely
+ * fast over a long run while a tank mostly becomes harder-hitting.
  */
 export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   chaser: {
     hp: 40,
     hpGrowthPerMin: 0.7,
+    damageGrowthPerMin: 0.1,
+    speedGrowthPerMin: 0.05,
     speed: 2.0,
     damage: 12,
     radius: 14,
@@ -36,6 +48,8 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   speeder: {
     hp: 22,
     hpGrowthPerMin: 0.7,
+    damageGrowthPerMin: 0.08,
+    speedGrowthPerMin: 0.09,
     speed: 3.6,
     damage: 9,
     radius: 12,
@@ -47,6 +61,8 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   tank: {
     hp: 120,
     hpGrowthPerMin: 0.7,
+    damageGrowthPerMin: 0.14,
+    speedGrowthPerMin: 0.03,
     speed: 1.15,
     damage: 22,
     radius: 24,
@@ -58,6 +74,8 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   sniper: {
     hp: 35,
     hpGrowthPerMin: 0.7,
+    damageGrowthPerMin: 0.12,
+    speedGrowthPerMin: 0.04,
     speed: 1.7,
     damage: 16,
     radius: 16,
@@ -69,6 +87,8 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   charger: {
     hp: 50,
     hpGrowthPerMin: 0.7,
+    damageGrowthPerMin: 0.12,
+    speedGrowthPerMin: 0.06,
     speed: 2.0,
     damage: 20,
     radius: 15,
@@ -80,6 +100,8 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   hive: {
     hp: 85,
     hpGrowthPerMin: 0.7,
+    damageGrowthPerMin: 0.09,
+    speedGrowthPerMin: 0.04,
     speed: 1.35,
     damage: 15,
     radius: 22,
@@ -91,6 +113,8 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   boss: {
     hp: 850,
     hpGrowthPerMin: 0.9,
+    damageGrowthPerMin: 0.1,
+    speedGrowthPerMin: 0.04,
     speed: 1.35,
     damage: 32,
     radius: 46,
@@ -143,4 +167,26 @@ export function enemyHpFor(
   growthScale: number = 1
 ): number {
   return def.hp * (1 + (elapsedSeconds / 120) * def.hpGrowthPerMin * growthScale);
+}
+
+/**
+ * Damage a freshly spawned enemy deals, given the run's elapsed time. Rounded,
+ * because it lands on the player's HP and appears in the damage numbers.
+ * `threatScale` is 0 in modes that keep enemies flat.
+ */
+export function enemyDamageFor(
+  def: EnemyTypeDef,
+  elapsedSeconds: number,
+  threatScale: number
+): number {
+  return Math.round(def.damage * (1 + (elapsedSeconds / 60) * def.damageGrowthPerMin * threatScale));
+}
+
+/** Movement speed of a freshly spawned enemy, given the run's elapsed time. */
+export function enemySpeedFor(
+  def: EnemyTypeDef,
+  elapsedSeconds: number,
+  threatScale: number
+): number {
+  return def.speed * (1 + (elapsedSeconds / 60) * def.speedGrowthPerMin * threatScale);
 }
