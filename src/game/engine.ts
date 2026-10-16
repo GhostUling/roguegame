@@ -21,6 +21,11 @@ import { drawCharacterShip, drawResonanceArc } from './shipRender';
 import { getPilotWeaponStats } from './pilotStats';
 
 const TWIN_WING_DIST = 32; // half of the wing span: ships sit 64px apart
+/**
+ * Twin Link compounds upgrades across two weapon systems, so the pair outgrows a
+ * solo run. The enemy stat curve is steepened by this factor to keep pace.
+ */
+const TWIN_GROWTH_SCALE = 1.5;
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -65,6 +70,17 @@ export class GameEngine {
   private keys: Record<string, boolean> = {};
   public joystickVector: { x: number; y: number } = { x: 0, y: 0 };
 
+  // Game speed multiplier (0.5 / 1 / 2 / 3)
+  public timeScale: number = 1;
+  /** Scaled clock in ms. All weapon timers read this so they honour `timeScale`. */
+  private gameClockMs: number = 0;
+
+  // Pointer steering
+  public controlMode: 'keys' | 'mouse' = 'keys';
+  private mouseX: number = 0;
+  private mouseY: number = 0;
+  private mouseInside: boolean = false;
+
   // Screen shake
   private shakeIntensity: number = 0;
   private shakeDecay: number = 0.9;
@@ -102,6 +118,8 @@ export class GameEngine {
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
+    window.addEventListener('mousemove', this.handleMouseMove);
+    window.addEventListener('mouseout', this.handleMouseOut);
   }
 
   public destroy() {
@@ -109,7 +127,24 @@ export class GameEngine {
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
+    window.removeEventListener('mousemove', this.handleMouseMove);
+    window.removeEventListener('mouseout', this.handleMouseOut);
   }
+
+  public setControlMode(mode: 'keys' | 'mouse') {
+    this.controlMode = mode;
+    this.canvas.style.cursor = mode === 'mouse' ? 'none' : 'crosshair';
+  }
+
+  private handleMouseMove = (e: MouseEvent) => {
+    this.mouseX = e.clientX;
+    this.mouseY = e.clientY;
+    this.mouseInside = true;
+  };
+
+  private handleMouseOut = (e: MouseEvent) => {
+    if (!e.relatedTarget) this.mouseInside = false;
+  };
 
   private handleResize = () => {
     this.width = window.innerWidth;
@@ -162,7 +197,7 @@ export class GameEngine {
         angle: 0,
         dist: 55,
         rotSpeed: 2.2,
-        lastFireTime: performance.now(),
+        lastFireTime: this.gameClockMs,
       });
     }
     if (isTwin && twinPilotId === 'epsilon_carrier') {
@@ -172,7 +207,7 @@ export class GameEngine {
         angle: Math.PI,
         dist: 55,
         rotSpeed: -2.2,
-        lastFireTime: performance.now(),
+        lastFireTime: this.gameClockMs,
       });
     }
 
@@ -471,7 +506,7 @@ export class GameEngine {
           angle: Math.random() * Math.PI * 2,
           dist: 65,
           rotSpeed: 3.2,
-          lastFireTime: performance.now(),
+          lastFireTime: this.gameClockMs,
         },
         {
           id: this.nextDroneId++,
@@ -479,7 +514,7 @@ export class GameEngine {
           angle: Math.random() * Math.PI * 2,
           dist: 75,
           rotSpeed: -3.2,
-          lastFireTime: performance.now(),
+          lastFireTime: this.gameClockMs,
         }
       );
 
@@ -556,8 +591,9 @@ export class GameEngine {
       return;
     }
 
-    const dt = Math.min((timestamp - this.lastTime) / 1000, 0.08);
+    const realDt = Math.min((timestamp - this.lastTime) / 1000, 0.08);
     this.lastTime = timestamp;
+    const dt = realDt * this.timeScale;
 
     this.update(dt);
     this.render();
@@ -570,6 +606,7 @@ export class GameEngine {
   /* ========================================================================= */
   private update(dt: number) {
     this.gameTime += dt;
+    this.gameClockMs += dt * 1000;
     this.pulseAnimTime += dt;
 
     // 1. Skill Timers & Cooldown
@@ -697,14 +734,26 @@ export class GameEngine {
     let dx = 0;
     let dy = 0;
 
-    if (this.keys['w'] || this.keys['arrowup']) dy -= 1;
-    if (this.keys['s'] || this.keys['arrowdown']) dy += 1;
-    if (this.keys['a'] || this.keys['arrowleft']) dx -= 1;
-    if (this.keys['d'] || this.keys['arrowright']) dx += 1;
+    if (this.controlMode === 'mouse') {
+      // Chase the pointer: full stick deflection far away, fine control up close.
+      const toX = this.mouseX - this.player.x;
+      const toY = this.mouseY - this.player.y;
+      const dist = Math.hypot(toX, toY);
+      if (this.mouseInside && dist > 8) {
+        const deflection = Math.min(1, dist / 140);
+        dx = (toX / dist) * deflection;
+        dy = (toY / dist) * deflection;
+      }
+    } else {
+      if (this.keys['w'] || this.keys['arrowup']) dy -= 1;
+      if (this.keys['s'] || this.keys['arrowdown']) dy += 1;
+      if (this.keys['a'] || this.keys['arrowleft']) dx -= 1;
+      if (this.keys['d'] || this.keys['arrowright']) dx += 1;
 
-    if (Math.abs(this.joystickVector.x) > 0.05 || Math.abs(this.joystickVector.y) > 0.05) {
-      dx = this.joystickVector.x;
-      dy = this.joystickVector.y;
+      if (Math.abs(this.joystickVector.x) > 0.05 || Math.abs(this.joystickVector.y) > 0.05) {
+        dx = this.joystickVector.x;
+        dy = this.joystickVector.y;
+      }
     }
 
     let currentSpeed = this.player.speed;
@@ -738,7 +787,7 @@ export class GameEngine {
   }
 
   private updateAutoShooting() {
-    const now = performance.now();
+    const now = this.gameClockMs;
     const positions = this.getTwinPositions();
 
     this.updateBarragePulse(0, positions.p1, now);
@@ -888,7 +937,7 @@ export class GameEngine {
   /* ========================================================================= */
   private updateDrones(dt: number) {
     const desiredInterceptors = this.player.droneCount || 0;
-    const now = performance.now();
+    const now = this.gameClockMs;
 
     // Sync interceptor drones
     const currentInterceptors = this.player.drones.filter((d) => d.type === 'interceptor');
@@ -1654,7 +1703,8 @@ export class GameEngine {
       y = Math.random() * this.height;
     }
 
-    const timeScale = 1 + (this.gameTime / 120) * 0.7;
+    const growth = this.isTwinRun() ? TWIN_GROWTH_SCALE : 1;
+    const timeScale = 1 + (this.gameTime / 120) * 0.7 * growth;
     let radius = 14;
     let hp = 40 * timeScale;
     let speed = 2.0;
@@ -1740,7 +1790,8 @@ export class GameEngine {
   private spawnBoss() {
     const x = this.width / 2;
     const y = -80;
-    const timeScale = 1 + (this.gameTime / 120) * 0.9;
+    const growth = this.isTwinRun() ? TWIN_GROWTH_SCALE : 1;
+    const timeScale = 1 + (this.gameTime / 120) * 0.9 * growth;
     const hp = 850 * timeScale;
 
     this.enemies.push({
@@ -2392,6 +2443,59 @@ export class GameEngine {
 
     // 11. Draw Floating Combat Text
     this.renderFloatingTexts(ctx);
+
+    // 12. Draw Pointer Reticle (mouse steering only)
+    this.renderMouseCursor(ctx);
+
+    ctx.restore();
+  }
+
+  /** Geometric reticle substituting for the hidden native cursor. */
+  private renderMouseCursor(ctx: CanvasRenderingContext2D) {
+    if (this.controlMode !== 'mouse' || !this.mouseInside) return;
+
+    const x = this.mouseX;
+    const y = this.mouseY;
+    const pulse = 1 + Math.sin(this.pulseAnimTime * 6) * 0.12;
+
+    ctx.save();
+
+    // Course line from the vessel to the reticle
+    const dist = Math.hypot(this.mouseX - this.player.x, this.mouseY - this.player.y);
+    if (dist > 8) {
+      ctx.strokeStyle = 'rgba(0, 255, 204, 0.22)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 8]);
+      ctx.beginPath();
+      ctx.moveTo(this.player.x, this.player.y);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Chasing reticle: ring, four bearing ticks and a center pip
+    ctx.translate(x, y);
+    ctx.rotate(this.pulseAnimTime * 2);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = 2;
+    const r = 11 * pulse;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      const cos = Math.cos(a);
+      const sin = Math.sin(a);
+      ctx.moveTo(cos * r * 1.25, sin * r * 1.25);
+      ctx.lineTo(cos * r * 1.75, sin * r * 1.75);
+    }
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(0, 0, 2.4, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }

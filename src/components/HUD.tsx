@@ -2,16 +2,34 @@ import React from 'react';
 import { Player } from '../game/types';
 import { getCharacterDef } from '../game/characters';
 import { getPilotWeaponStats } from '../game/pilotStats';
-import { Volume2, VolumeX, Pause, Skull, Clock, Zap, Shield, Sparkles, Users } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Pause,
+  Skull,
+  Clock,
+  Zap,
+  Shield,
+  Sparkles,
+  Users,
+  Keyboard,
+  MousePointer2,
+} from 'lucide-react';
+
+const SPEED_OPTIONS = [0.5, 1, 2, 3];
 
 interface HUDProps {
   player: Player;
   timeSeconds: number;
   bossWarning: boolean;
   isMuted: boolean;
+  timeScale: number;
+  controlMode: 'keys' | 'mouse';
   onToggleMute: () => void;
   onPause: () => void;
   onTriggerSkill: () => void;
+  onChangeTimeScale: (scale: number) => void;
+  onToggleControlMode: () => void;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -19,9 +37,13 @@ export const HUD: React.FC<HUDProps> = ({
   timeSeconds,
   bossWarning,
   isMuted,
+  timeScale,
+  controlMode,
   onToggleMute,
   onPause,
   onTriggerSkill,
+  onChangeTimeScale,
+  onToggleControlMode,
 }) => {
   const char = getCharacterDef(player.characterId);
 
@@ -76,6 +98,37 @@ export const HUD: React.FC<HUDProps> = ({
 
           {/* Quick controls */}
           <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center h-[34px] rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden">
+              <span className="px-1.5 text-[10px] font-mono-numbers text-slate-500">速度</span>
+              {SPEED_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => onChangeTimeScale(s)}
+                  className={`h-full px-1.5 text-[10px] font-mono-numbers border-l border-slate-800 transition-colors cursor-pointer ${
+                    s === timeScale
+                      ? 'bg-cyan-500/25 text-cyan-200 font-bold'
+                      : 'text-slate-400 hover:text-slate-100'
+                  }`}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={onToggleControlMode}
+              className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+                controlMode === 'mouse'
+                  ? 'bg-cyan-950/70 border-cyan-500/60 text-cyan-300'
+                  : 'bg-slate-900/80 border-slate-700/60 text-slate-300 hover:text-cyan-400'
+              }`}
+              title={
+                controlMode === 'mouse'
+                  ? '当前: 鼠标操控 (机体追随光标) — 点击切回键盘'
+                  : '当前: 键盘/摇杆操控 — 点击切换为鼠标追随'
+              }
+            >
+              {controlMode === 'mouse' ? <MousePointer2 size={16} /> : <Keyboard size={16} />}
+            </button>
             <button
               onClick={onToggleMute}
               className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-cyan-400 border border-slate-700/60 transition-colors cursor-pointer"

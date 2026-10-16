@@ -47,6 +47,8 @@ export default function App() {
     }
   });
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [timeScale, setTimeScale] = useState<number>(1);
+  const [controlMode, setControlMode] = useState<'keys' | 'mouse'>('keys');
 
   // Initialize Canvas & Game Engine
   useEffect(() => {
@@ -201,6 +203,21 @@ export default function App() {
     setIsMuted(muted);
   }, []);
 
+  const handleChangeTimeScale = useCallback((scale: number) => {
+    setTimeScale(scale);
+    if (engineRef.current) {
+      engineRef.current.timeScale = scale;
+    }
+  }, []);
+
+  const handleToggleControlMode = useCallback(() => {
+    const next = controlMode === 'mouse' ? 'keys' : 'mouse';
+    setControlMode(next);
+    if (engineRef.current) {
+      engineRef.current.setControlMode(next);
+    }
+  }, [controlMode]);
+
   const handleTriggerSkill = useCallback(() => {
     if (engineRef.current) {
       engineRef.current.triggerActiveSkill();
@@ -269,9 +286,13 @@ export default function App() {
           timeSeconds={gameTime}
           bossWarning={bossWarning}
           isMuted={isMuted}
+          timeScale={timeScale}
+          controlMode={controlMode}
           onToggleMute={toggleMute}
           onPause={pauseGame}
           onTriggerSkill={handleTriggerSkill}
+          onChangeTimeScale={handleChangeTimeScale}
+          onToggleControlMode={handleToggleControlMode}
         />
       )}
 
