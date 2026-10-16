@@ -1,0 +1,6 @@
+{
+  "name": "Geometric Overload",
+  "description": "A high-octane, zero-asset roguelite geometric survivor game featuring procedural vector graphics, Web Audio synthesis, and exponential build progression.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
