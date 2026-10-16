@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_UPGRADES, getRandomUpgrades } from './upgrades';
-import { createPlayer } from './player';
-import { Player } from './types';
+import { ALL_UPGRADES, getRandomUpgrades } from '../upgrades';
+import { createPlayer } from '../player';
+import { Player } from '../types';
 
 describe('upgrade table', () => {
   it('keeps ids and keys unique', () => {

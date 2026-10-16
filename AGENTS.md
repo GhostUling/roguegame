@@ -53,10 +53,10 @@ src/
     player.ts             开局玩家状态构造（合体属性在这里算）
     pilots.ts             双机编队 / 副机属性换算
     resonanceArc.ts       双子共鸣电弧绘制
-    codexData.ts          图鉴文案（注意：与 upgrades 存在双份真值，见技术债）
+    codexData.ts          图鉴文案（逐级数值是手写散文，改数值时要回头对一遍）
     audio.ts              程序化音效
     joystick.ts           触摸摇杆
-  **/*.test.ts            纯函数模块的行为测试（vitest，node 环境）
+    __tests__/            纯函数模块的行为测试（vitest，node 环境），与源码分开放
 ```
 
 ## 已知技术债

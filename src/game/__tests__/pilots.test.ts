@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createPlayer } from './player';
-import { getPilotWeaponStats, getTwinPositions, hasPilot } from './pilots';
-import { GAME_MODES, isPaired } from './modes';
+import { createPlayer } from '../player';
+import { getPilotWeaponStats, getTwinPositions, hasPilot } from '../pilots';
+import { GAME_MODES, isPaired } from '../modes';
 
 const WING_SPACING = GAME_MODES.twin_link.wingSpacing;
 

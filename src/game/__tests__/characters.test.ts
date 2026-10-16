@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CharacterId } from '../types';
-import { CHARACTERS, drawCharacterShip, getCharacterDef } from './index';
+import { CHARACTERS, drawCharacterShip, getCharacterDef } from '../characters';
 
 /** Every chassis the type union allows, in hangar order. */
 const EXPECTED_IDS: CharacterId[] = [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMY_TYPES, enemyHpFor, pickEnemyType } from './enemyTypes';
+import { ENEMY_TYPES, enemyHpFor, pickEnemyType } from '../enemyTypes';
 
 const ALL_TYPES = ['boss', 'charger', 'chaser', 'hive', 'sniper', 'speeder', 'tank'];
 

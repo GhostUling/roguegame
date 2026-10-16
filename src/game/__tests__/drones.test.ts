@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createPlayer } from './player';
-import { ALL_UPGRADES } from './upgrades';
+import { createPlayer } from '../player';
+import { ALL_UPGRADES } from '../upgrades';
 import {
   interceptorInterval,
   interceptorShotDamage,
   missileShotDamage,
   railgunInterval,
   railgunShotDamage,
-} from './drones';
+} from '../drones';
 
 const applyUpgrade = (p: ReturnType<typeof createPlayer>, key: string, level: number) => {
   ALL_UPGRADES.find((u) => u.key === key)!.apply(p, level);

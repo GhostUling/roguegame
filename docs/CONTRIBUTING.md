@@ -31,6 +31,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
               src/game/drones.ts        无人机射速/伤害算式（引擎与 UI 共用）
               src/game/resonanceArc.ts 共鸣电弧绘制
 渲染层       src/game/render/renderer.ts  只读 RenderState，输出到 Canvas
+测试         src/game/__tests__/*.test.ts 纯函数模块的行为测试（与源码分开放）
 ```
 
 ### 各文件职责
@@ -38,7 +39,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | 文件 | 职责 | 不该放什么 |
 |---|---|---|
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
-| `engine.ts` | 全部可变游戏状态；`update()` 里 17 步固定流水线（技能计时 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复） | 绘制细节（在 renderer）、数值表（在数据层） |
+| `engine.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线（技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复） | 绘制细节（在 renderer）、数值表（在数据层） |
 | `render/renderer.ts` | 15 个 `render*` 绘制函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
 | `modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
@@ -52,6 +53,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `resonanceArc.ts` | `drawResonanceArc`，双机之间的电弧，游戏内与选人预览共用 | 机体造型（在 characters） |
 | `audio.ts` | Web Audio 程序化音效 | 播放时机判断（由引擎调用） |
 | `joystick.ts` | 触摸摇杆，暴露归一化 `vector` | — |
+| `__tests__/*.test.ts` | 纯函数模块的行为测试（vitest，node 环境）。**不放**需要 canvas 的引擎循环与渲染 | 任何生产代码 |
 
 ## 数据流（一帧）
 
@@ -101,21 +103,21 @@ requestAnimationFrame
 1. `game/types.ts`：`CharacterId` 联合类型加一项
 2. `game/characters/<新机体>.ts`：新建一个文件，导出 `export const xxx: CharacterDef`（基础属性、被动、主动技）**和**它自己的 `export function drawXxx(ctx, radius, angle, time)`，照现有文件抄结构
 3. `game/characters/index.ts`：把 def 加进 `CHARACTERS`、把绘制函数加进 `SHIP_DRAWERS`
-4. `game/characters/index.test.ts`：把新 id 加进 `EXPECTED_IDS`（数组顺序就是选人界面的排序）
+4. `game/__tests__/characters.test.ts`：把新 id 加进 `EXPECTED_IDS`（数组顺序就是选人界面的排序）
 5. ⚠️ **行为**：主动技要在 `engine.ts` 的 `executeCharSkill` 里加一个 `if (charId === '...')` 分支；被动要用 `this.hasPilot('...')` 在引擎里判定（双子模式下任一侧搭载即生效）。被动若需要新状态，把字段加进 `types.ts` 的 `Player`，基值写在 `player.ts`
 6. ⚠️ **不要复用共享的 `isSkillActive` 计时器来记一次性的时长**：`player.skillMaxDuration` 取两台机体的较大值，与 δ/γ 组队时会把你的 buff 拉长。要精确时长就自己开一个字段（参考 `chargeTimer`）
 7. ⚠️ 若该机体在 `codexData.ts` 里有专属解说（机体目前没有，强化有），记得同步——那里有双份真值
 
 绘制函数一律用 `characters/shipDraw.ts` 的 `strokeUnit(radius)` 取线宽、`drawNoseCone(ctx, radius, angle)` 画机头；不要自己再写 `/18`。机体文件之间不要互相 import。
 
-身份约定（`index.test.ts` 会拦）：`title` 必须是 `四字定位 / 四字机制`，三个名字字段与主色互不重复，`accentColor` 不能等于 `color`；数值上 hp 与 speed 反相关、critChance 与伤害反相关，一台机体只许有一个身份，且要在血量或射速上付代价。
+身份约定（`__tests__/characters.test.ts` 会拦）：`title` 必须是 `四字定位 / 四字机制`，三个名字字段与主色互不重复，`accentColor` 不能等于 `color`；数值上 hp 与 speed 反相关、critChance 与伤害反相关，一台机体只许有一个身份，且要在血量或射速上付代价。
 
 ### 加一个模式
 模式差异已经收拢在 `game/modes.ts` 的 `GAME_MODES` 表里，**旋钮部分只需要加一行**。剩下的只有"表现"部分需要动代码（这部分无法数据化）：
 
 1. `game/types.ts`：`GameMode` 联合类型加一项
 2. `game/modes.ts`：`GAME_MODES` 加一行（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条、名称文案、强调色）。引擎、`player.ts`、HUD、选人界面、开始界面全部自动读表
-3. `game/modes.test.ts`：新模式的旋钮断言（表里的 `it('keeps every tuning knob in a sane range')` 会自动覆盖）
+3. `game/__tests__/modes.test.ts`：新模式的旋钮断言（表里的 `it('keeps every tuning knob in a sane range')` 会自动覆盖）
 4. 只有当新模式需要**专属画面**时才动渲染层：给 `RenderState` 加字段（`renderer.ts` 不判断模式字符串）
 5. 表现层按需：`components/StartScreen.tsx` 的模式卡是 map 出来的，加一行数据即可（新强调色要在 `ACCENT_CLASSES` 里补一条）；`components/CharacterSelectScreen.tsx` 的双槽选人、`components/{HUD,PauseModal,GameOverModal}.tsx` 的模式展示位
 6. `App.tsx`：若新模式不是"选了第二台机 = 联机"，`modeForPilots` 要跟着调整
@@ -128,8 +130,8 @@ requestAnimationFrame
    - **能**（`damage`、`fire_rate`、`speed`、`magnet`、`shield`…）：直接对 player 字段做乘/加，多级自然叠加，`lvl` 用不到。
    - **不能**（冷却、半径、数量、阈值、目标数这类）：在文件顶部的 `LVL_*` 区加一张逐级表，`apply` 与 `statDiffText` **都从这张表读**，别写第二份。
 3. `types.ts` 的 `Player` 加上对应字段（如 `naniteShieldCooldown`），基值写在 `player.ts` 的 `createPlayer` 里，引擎只读字段、不写常量。
-4. `codexData.ts` 补上 `levels`（**条数必须等于 `maxLevel`**，`codex.test.ts` 会拦）与 `synergies`（`targetKey` 必须真实存在）。
-5. `upgrades.test.ts` 里 `it('changes the player state on each and every rung')` 会自动覆盖新强化：**任何一级没改变 player 状态就会失败**。数值型的再补一条阶梯断言。
+4. `codexData.ts` 补上 `levels`（**条数必须等于 `maxLevel`**，`__tests__/codex.test.ts` 会拦）与 `synergies`（`targetKey` 必须真实存在）。
+5. `__tests__/upgrades.test.ts` 里 `it('changes the player state on each and every rung')` 会自动覆盖新强化：**任何一级没改变 player 状态就会失败**。数值型的再补一条阶梯断言。
 6. 强化只改 `player` 字段即可，双子模式会自动分摊到两机。
 
 ### 加一种敌人
