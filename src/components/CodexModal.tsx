@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ALL_UPGRADES, UpgradeDefinition } from '../game/upgrades';
-import { CODEX_DETAILS, CodexDetail, SynergyInfo } from '../game/codexData';
+import { CODEX_DETAILS, CodexDetail, synergyLabel } from '../game/codexData';
 import { sound } from '../game/audio';
 import {
   X,
@@ -86,7 +86,7 @@ export const CodexModal: React.FC<CodexModalProps> = ({
         const matchRole = detail?.primaryRole.toLowerCase().includes(query) || false;
         const matchArchetype = detail?.recommendedArchetype.toLowerCase().includes(query) || false;
         const matchTip = detail?.tacticalTip.toLowerCase().includes(query) || false;
-        const matchSynergy = detail?.synergies.some(s => s.nameZh.toLowerCase().includes(query) || s.synergyTitle.toLowerCase().includes(query)) || false;
+        const matchSynergy = detail?.synergies.some(s => synergyLabel(s.targetKey).toLowerCase().includes(query) || s.synergyTitle.toLowerCase().includes(query)) || false;
         return matchName || matchDesc || matchRole || matchArchetype || matchTip || matchSynergy;
       }
       return true;
@@ -523,14 +523,18 @@ export const CodexModal: React.FC<CodexModalProps> = ({
                   </div>
 
                   <div className="space-y-2 font-sans">
-                    {selectedDetail.levels.map((lvl) => {
-                      const isCurrent = currentLvlInRun === lvl.level;
-                      const isReached = currentLvlInRun >= lvl.level;
+                    {selectedDetail.levels.map((lvl, idx) => {
+                      // Level number and the MAX flag are derived from the upgrade's
+                      // own maxLevel, so the ladder can never disagree with the data table.
+                      const level = idx + 1;
+                      const isMax = level >= selectedUpgrade.maxLevel;
+                      const isCurrent = currentLvlInRun === level;
+                      const isReached = currentLvlInRun >= level;
                       return (
                         <div
-                          key={lvl.level}
+                          key={level}
                           className={`p-3 rounded-xl border flex items-start gap-3 transition-all ${
-                            lvl.isMax
+                            isMax
                               ? 'bg-amber-950/20 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.1)]'
                               : isCurrent
                               ? 'bg-cyan-950/30 border-cyan-500/50 ring-1 ring-cyan-500/40'
@@ -540,14 +544,14 @@ export const CodexModal: React.FC<CodexModalProps> = ({
                           {/* Level badge number */}
                           <div
                             className={`w-8 h-8 rounded-lg flex items-center justify-center font-mono-numbers font-black text-xs shrink-0 ${
-                              lvl.isMax
+                              isMax
                                 ? 'bg-amber-500 text-slate-950 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
                                 : isReached
                                 ? 'bg-cyan-500 text-slate-950'
                                 : 'bg-slate-800 text-slate-400 border border-slate-700'
                             }`}
                           >
-                            {lvl.isMax ? 'MAX' : `Lv.${lvl.level}`}
+                            {isMax ? 'MAX' : `Lv.${level}`}
                           </div>
 
                           {/* Content */}
@@ -555,7 +559,7 @@ export const CodexModal: React.FC<CodexModalProps> = ({
                             <div className="flex items-center justify-between gap-2">
                               <span
                                 className={`text-xs font-bold ${
-                                  lvl.isMax ? 'text-amber-300' : 'text-slate-200'
+                                  isMax ? 'text-amber-300' : 'text-slate-200'
                                 }`}
                               >
                                 {lvl.title}
@@ -602,7 +606,7 @@ export const CodexModal: React.FC<CodexModalProps> = ({
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
-                                  {syn.nameZh}
+                                  {synergyLabel(syn.targetKey)}
                                 </span>
                                 <span
                                   className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${synMeta.badge}`}
