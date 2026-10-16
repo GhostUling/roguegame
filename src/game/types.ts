@@ -9,7 +9,11 @@ export type CharacterId =
   | 'gamma_viper'
   | 'delta_chronos'
   | 'epsilon_carrier'
-  | 'zeta_aurora';
+  | 'zeta_aurora'
+  | 'eta_siphon'
+  | 'theta_aegis'
+  | 'iota_fusion'
+  | 'kappa_lance';
 
 export interface CharacterDef {
   id: CharacterId;
@@ -161,6 +165,15 @@ export interface Player {
   droneShieldReduction: number; // collision damage reduction, 0..1
   droneShieldSpinScale: number;
 
+  // Chassis passives (each field belongs to the hull named beside it)
+  siphonHasteTimer: number; // Siphon Eta: seconds of stacked +15% fire rate, caps at 3
+  tempShield: number; // Siphon Eta skill: ablative points soaked before HP
+  chargeTimer: number; // Aegis Theta skill: seconds left of the invincible ram dash
+  chargeDirX: number;
+  chargeDirY: number;
+  kappaShotCharge: number; // Lance Kappa: shots fired since the last piercing ray
+  iotaShotCharge: number; // Fusion Iota: shells fired since the last overload blast
+
   // Meta deckbuilding & reroll
   rerollCount: number;
   activeSlots: string[]; // max 6 distinct categories/keys
@@ -213,6 +226,9 @@ export interface Enemy {
   chargeDir?: { x: number; y: number };
   attackCooldown?: number;
   frozenTimer?: number; // Cryo slow status
+  markedTimer?: number; // Lance Kappa mark: takes +25% damage while it burns down
+  burnTimer?: number; // Fusion Iota burn: seconds of damage over time left
+  burnDps?: number;
 }
 
 export interface Projectile {
@@ -233,6 +249,8 @@ export interface Projectile {
   bouncesRemaining?: number;
   isClusterSub?: boolean;
   isRefractionShard?: boolean;
+  /** Fusion Iota overload shell: every sixth round, detonates far wider. */
+  isIotaBomb?: boolean;
 }
 
 export interface EnemyProjectile {
@@ -300,6 +318,28 @@ export interface Shockwave {
   width: number;
   life: number;
   maxLife: number;
+}
+
+/** A straight energy line (Lance Kappa's piercing ray and annihilation spear). */
+export interface Beam {
+  id: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  width: number;
+  life: number;
+  maxLife: number;
+}
+
+/** A Fusion Iota melt core: primed where it lands, detonates when the fuse ends. */
+export interface MeltCore {
+  id: number;
+  x: number;
+  y: number;
+  timer: number;
+  fuse: number;
 }
 
 export interface Satellite {

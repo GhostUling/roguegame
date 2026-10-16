@@ -45,7 +45,7 @@ src/
     render/renderer.ts    全部绘制，只读 RenderState
     types.ts              共享类型
     modes.ts              游戏模式描述表（模式差异的唯一来源）
-    characters/           6 台机体，一台一个文件（数值 + 外观）
+    characters/           10 台机体，一台一个文件（数值 + 外观）
       index.ts              聚合 CHARACTERS / getCharacterDef / drawCharacterShip
       shipDraw.ts           机体绘制共用画笔（线宽单位、机头）
     enemyTypes.ts         7 种敌人数据表 + 波次表

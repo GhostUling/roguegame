@@ -96,15 +96,19 @@ requestAnimationFrame
 反过来用：**如果发现自己要在两个文件里改同一个数值，那就是设计错了**，把真值收拢到数据层。
 
 ### 加一台机体
-一共动 3 个文件，其余全部自动适配（选人界面、HUD、暂停面板都走 `getCharacterDef` / `CHARACTERS` 遍历）：
+**数据与外观**动 3 个文件，选人界面 / HUD / 暂停面板会自动适配（都走 `getCharacterDef` / `CHARACTERS` 遍历）；但**机制必须自己落到引擎**——`CharacterDef` 只是文案，引擎不认识它：
 
 1. `game/types.ts`：`CharacterId` 联合类型加一项
 2. `game/characters/<新机体>.ts`：新建一个文件，导出 `export const xxx: CharacterDef`（基础属性、被动、主动技）**和**它自己的 `export function drawXxx(ctx, radius, angle, time)`，照现有文件抄结构
 3. `game/characters/index.ts`：把 def 加进 `CHARACTERS`、把绘制函数加进 `SHIP_DRAWERS`
 4. `game/characters/index.test.ts`：把新 id 加进 `EXPECTED_IDS`（数组顺序就是选人界面的排序）
-5. ⚠️ 若该机体在 `codexData.ts` 里有专属解说（机体目前没有，强化有），记得同步——那里有双份真值
+5. ⚠️ **行为**：主动技要在 `engine.ts` 的 `executeCharSkill` 里加一个 `if (charId === '...')` 分支；被动要用 `this.hasPilot('...')` 在引擎里判定（双子模式下任一侧搭载即生效）。被动若需要新状态，把字段加进 `types.ts` 的 `Player`，基值写在 `player.ts`
+6. ⚠️ **不要复用共享的 `isSkillActive` 计时器来记一次性的时长**：`player.skillMaxDuration` 取两台机体的较大值，与 δ/γ 组队时会把你的 buff 拉长。要精确时长就自己开一个字段（参考 `chargeTimer`）
+7. ⚠️ 若该机体在 `codexData.ts` 里有专属解说（机体目前没有，强化有），记得同步——那里有双份真值
 
 绘制函数一律用 `characters/shipDraw.ts` 的 `strokeUnit(radius)` 取线宽、`drawNoseCone(ctx, radius, angle)` 画机头；不要自己再写 `/18`。机体文件之间不要互相 import。
+
+身份约定（`index.test.ts` 会拦）：`title` 必须是 `四字定位 / 四字机制`，三个名字字段与主色互不重复，`accentColor` 不能等于 `color`；数值上 hp 与 speed 反相关、critChance 与伤害反相关，一台机体只许有一个身份，且要在血量或射速上付代价。
 
 ### 加一个模式
 模式差异已经收拢在 `game/modes.ts` 的 `GAME_MODES` 表里，**旋钮部分只需要加一行**。剩下的只有"表现"部分需要动代码（这部分无法数据化）：

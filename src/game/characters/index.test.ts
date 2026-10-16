@@ -10,6 +10,10 @@ const EXPECTED_IDS: CharacterId[] = [
   'delta_chronos',
   'epsilon_carrier',
   'zeta_aurora',
+  'eta_siphon',
+  'theta_aegis',
+  'iota_fusion',
+  'kappa_lance',
 ];
 
 /**
@@ -48,6 +52,21 @@ describe('character registry', () => {
   it('gives every chassis its own active skill id', () => {
     const skillIds = CHARACTERS.map((c) => c.activeSkill.id);
     expect(new Set(skillIds).size).toBe(skillIds.length);
+  });
+
+  it('keeps the hangar identity spec: unique names, distinct hull colours, paired title', () => {
+    expect(new Set(CHARACTERS.map((c) => c.nameZh)).size).toBe(CHARACTERS.length);
+    expect(new Set(CHARACTERS.map((c) => c.name)).size).toBe(CHARACTERS.length);
+    expect(new Set(CHARACTERS.map((c) => c.color)).size).toBe(CHARACTERS.length);
+
+    for (const def of CHARACTERS) {
+      // "四字定位 / 四字机制" — the hangar card only shows the first half.
+      expect(def.title, def.id).toContain(' / ');
+      const [role, mechanic] = def.title.split('/');
+      expect(role.trim().length, def.id).toBe(4);
+      expect(mechanic.trim().length, def.id).toBe(4);
+      expect(def.accentColor, def.id).not.toBe(def.color);
+    }
   });
 
   it('resolves each id to its own definition', () => {

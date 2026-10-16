@@ -157,6 +157,14 @@ export function createPlayer(
     droneShield: false,
     droneShieldReduction: 0.15,
     droneShieldSpinScale: 1,
+    // Chassis passive clocks (read by the engine, filled by the matching skill)
+    siphonHasteTimer: 0,
+    tempShield: 0,
+    chargeTimer: 0,
+    chargeDirX: 0,
+    chargeDirY: 0,
+    kappaShotCharge: 0,
+    iotaShotCharge: 0,
     // Meta & deckbuilding
     rerollCount: 2,
     activeSlots: initialActiveSlots,

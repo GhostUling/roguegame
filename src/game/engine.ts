@@ -14,6 +14,8 @@ import {
   SingularityVortex,
   Drone,
   GameMode,
+  Beam,
+  MeltCore,
 } from './types';
 import { sound } from './audio';
 import { drawCharacterShip, getCharacterDef } from './characters';
@@ -64,6 +66,8 @@ export class GameEngine {
   public shockwaves: Shockwave[] = [];
   public satellites: Satellite[] = [];
   public vortices: SingularityVortex[] = [];
+  public beams: Beam[] = [];
+  public meltCores: MeltCore[] = [];
 
   // System
   private animFrameId: number = 0;
@@ -105,6 +109,11 @@ export class GameEngine {
   public bossWarningActive: boolean = false;
   private bossWarningTimer: number = 0;
   private nextDroneId: number = 1;
+  private nextBeamId: number = 1;
+  private nextMeltId: number = 1;
+  /** Lance Kappa's annihilation spear counts down before it fires. */
+  private spearWindup: number = 0;
+  private spearAngle: number = 0;
 
   // Visuals & Offscreen Glow Texture Cache
   /** Seconds since the run started, drives every idle animation. */
@@ -209,6 +218,9 @@ export class GameEngine {
     this.shockwaves = [];
     this.satellites = [];
     this.vortices = [];
+    this.beams = [];
+    this.meltCores = [];
+    this.spearWindup = 0;
     this.gameTime = 0;
     this.nextWaveTimer = 0;
     this.lastBarragePulse = 0;
@@ -454,6 +466,75 @@ export class GameEngine {
       sound.playFrostGlaciation();
       return;
     }
+
+    if (charId === 'eta_siphon') {
+      this.player.isSkillActive = true;
+      this.player.skillActiveTimer = Math.max(this.player.skillActiveTimer, 3.0);
+
+      this.shockwaves.push({
+        id: Math.random(),
+        x: this.player.x,
+        y: this.player.y,
+        radius: 14,
+        maxRadius: 170,
+        color: '#e11d48',
+        width: 3.5,
+        life: 0,
+        maxLife: 0.4,
+      });
+
+      this.triggerScreenShake(5);
+      sound.playUpgrade();
+      return;
+    }
+
+    if (charId === 'theta_aegis') {
+      // The dash is a self-propelled ram, so it locks its own vector instead of
+      // following the stick for its 0.8s. `chargeTimer` outranks the shared skill
+      // timer so a longer partner skill cannot stretch the charge.
+      const dashAngle =
+        Math.hypot(this.player.vx, this.player.vy) > 0.1
+          ? Math.atan2(this.player.vy, this.player.vx)
+          : this.player.angle;
+      this.player.angle = dashAngle;
+      this.player.chargeDirX = Math.cos(dashAngle);
+      this.player.chargeDirY = Math.sin(dashAngle);
+      this.player.chargeTimer = 0.8;
+      this.player.isSkillActive = true;
+      this.player.skillActiveTimer = Math.max(this.player.skillActiveTimer, 0.8);
+
+      this.triggerScreenShake(4);
+      sound.playChargerDash();
+      return;
+    }
+
+    if (charId === 'iota_fusion') {
+      this.deployMeltCores();
+
+      this.triggerScreenShake(6);
+      sound.playExplosion(true);
+      return;
+    }
+
+    if (charId === 'kappa_lance') {
+      this.spearAngle = this.player.angle;
+      this.spearWindup = 0.6;
+
+      this.shockwaves.push({
+        id: Math.random(),
+        x: this.player.x,
+        y: this.player.y,
+        radius: 10,
+        maxRadius: 150,
+        color: '#5eead4',
+        width: 2.5,
+        life: 0,
+        maxLife: 0.6,
+      });
+
+      sound.playSniperLock();
+      return;
+    }
   }
 
   private loop = (timestamp: number) => {
@@ -499,52 +580,76 @@ export class GameEngine {
       }
     }
 
-    // 2. Boss schedule & periodic rewards
+    // 2. Chassis clocks that keep their own beat, independent of the shared skill
+    //    timer (a partner's skill may be longer or shorter than theirs).
+    if (this.player.siphonHasteTimer > 0) {
+      this.player.siphonHasteTimer = Math.max(0, this.player.siphonHasteTimer - dt);
+    }
+    if (this.player.chargeTimer > 0) {
+      this.player.chargeTimer -= dt;
+      if (this.player.chargeTimer <= 0) {
+        this.player.chargeTimer = 0;
+        this.player.chargeDirX = 0;
+        this.player.chargeDirY = 0;
+        this.releaseChargeShockwave();
+      }
+    }
+    if (this.spearWindup > 0) {
+      this.spearWindup -= dt;
+      if (this.spearWindup <= 0) {
+        this.spearWindup = 0;
+        this.fireKappaSpear(this.spearAngle);
+      }
+    }
+    this.updateMeltCores(dt);
+    this.updateBeams(dt);
+
+    // 3. Boss schedule & periodic rewards
     this.updateBossSchedule(dt);
 
-    // 3. Update Player Movement & Passives
+    // 4. Update Player Movement & Passives
     this.updatePlayerMovement(dt);
 
-    // 4. Auto Shoot & Barrage
+    // 5. Auto Shoot & Barrage
     this.updateAutoShooting();
 
-    // 5. Update Orbit Satellites
+    // 6. Update Orbit Satellites
     this.updateSatellites(dt);
 
-    // 6. Update Autonomous Drones
+    // 7. Update Autonomous Drones
     this.updateDrones(dt);
 
-    // 7. Update Supernova Pulse
+    // 8. Update Supernova Pulse
     this.updateNovaPulse(dt);
 
-    // 8. Update Repulsion Field
+    // 9. Update Repulsion Field
     this.updateRepulsionField(dt);
 
-    // 9. Update Nanite Shield Timer
+    // 10. Update Nanite Shield Timer
     this.updateNaniteShield(dt);
 
-    // 10. Update Singularity Vortices
+    // 11. Update Singularity Vortices
     this.updateVortices(dt);
 
-    // 11. Update Player Projectiles (bouncing, cluster, cryo, chain)
+    // 12. Update Player Projectiles (bouncing, cluster, cryo, chain)
     this.updateProjectiles(dt);
 
-    // 12. Update Enemy Projectiles
+    // 13. Update Enemy Projectiles
     this.updateEnemyProjectiles(dt);
 
-    // 13. Spawn & Update Enemies (tactical AI)
+    // 14. Spawn & Update Enemies (tactical AI)
     this.updateEnemySpawning(dt);
     this.updateEnemies(dt);
 
-    // 14. Update Gems & Attraction
+    // 15. Update Gems & Attraction
     this.updateGems(dt);
 
-    // 15. Update Particles & VFX
+    // 16. Update Particles & VFX
     this.updateParticles(dt);
     this.updateFloatingTexts(dt);
     this.updateShockwaves(dt);
 
-    // 16. Camera Shake
+    // 17. Camera Shake
     if (this.shakeIntensity > 0.3) {
       this.shakeOffset.x = (Math.random() - 0.5) * this.shakeIntensity;
       this.shakeOffset.y = (Math.random() - 0.5) * this.shakeIntensity;
@@ -555,7 +660,7 @@ export class GameEngine {
       this.shakeIntensity = 0;
     }
 
-    // 17. Out-of-Combat Health Regeneration (only recovers HP after 3.0s without taking damage)
+    // 18. Out-of-Combat Health Regeneration (only recovers HP after 3.0s without taking damage)
     this.player.timeSinceLastDamage = (this.player.timeSinceLastDamage || 0) + dt;
     const OUT_OF_COMBAT_REGEN_TIME = 3.0;
     if (this.player.timeSinceLastDamage >= OUT_OF_COMBAT_REGEN_TIME && this.player.hp < this.player.maxHp) {
@@ -629,6 +734,15 @@ export class GameEngine {
     let currentSpeed = this.player.speed;
     if (this.hasPilot('delta_chronos') && this.player.isSkillActive) {
       currentSpeed *= 1.45;
+    }
+
+    // Aegis Theta's inertial charge steers itself: the vector is locked at cast
+    // time, so the stick is ignored until the dash burns out.
+    if (this.player.chargeTimer > 0) {
+      currentSpeed *= 3;
+      dx = this.player.chargeDirX;
+      dy = this.player.chargeDirY;
+      this.player.invincibleTimer = Math.max(this.player.invincibleTimer, 0.12);
     }
 
     const len = Math.hypot(dx, dy);
@@ -720,6 +834,10 @@ export class GameEngine {
     if (stats.charId === 'gamma_viper' && this.player.isSkillActive) {
       currentFireRate = Math.max(75, Math.round(stats.fireRate * 0.25));
     }
+    // Siphon Eta's overheal stacks bleed off as raw rate of fire.
+    if (this.hasPilot('eta_siphon') && this.player.siphonHasteTimer > 0) {
+      currentFireRate = Math.max(60, Math.round(currentFireRate / 1.15));
+    }
 
     const lastFireTime =
       index === 0 ? this.player.lastFireTime : this.player.pilot2LastFireTime || 0;
@@ -774,11 +892,31 @@ export class GameEngine {
 
     const bulletColor = index === 0 ? '#00ffcc' : getCharacterDef(stats.charId).color;
 
+    // Siphon Eta fights hardest with its back to the wall.
+    let shotDamage = stats.bulletDamage;
+    if (this.hasPilot('eta_siphon') && this.player.hp <= this.player.maxHp * 0.3) {
+      shotDamage = Math.round(shotDamage * 1.4);
+    }
+
+    // Fusion Iota's every sixth volley is an overload shell. As with the Lance
+    // counter, every wing feeds the shared count so a pair of them does not leave
+    // one hull firing plain shells forever.
+    let overloadShell = false;
+    if (stats.charId === 'iota_fusion') {
+      this.player.iotaShotCharge = (this.player.iotaShotCharge || 0) + 1;
+      if (this.player.iotaShotCharge >= 6) {
+        this.player.iotaShotCharge = 0;
+        overloadShell = true;
+      }
+    }
+
     for (let i = 0; i < count; i++) {
       const angle = startAngle + i * spreadAngle;
-      const isCrit = isGuaranteedCrit || Math.random() < effectiveCritChance;
+      const isCrit = overloadShell || isGuaranteedCrit || Math.random() < effectiveCritChance;
 
-      const dmg = Math.round(stats.bulletDamage * (isCrit ? stats.critMultiplier : 1));
+      const dmg = Math.round(
+        shotDamage * (overloadShell ? 2.5 : isCrit ? stats.critMultiplier : 1)
+      );
 
       this.projectiles.push({
         id: this.nextProjId++,
@@ -788,15 +926,29 @@ export class GameEngine {
         vy: Math.sin(angle) * this.player.bulletSpeed,
         damage: dmg,
         pierce: stats.bulletPierce,
-        radius: isCrit ? 5.5 : 4.5,
-        color: isCrit ? '#ffee33' : bulletColor,
+        radius: overloadShell ? 7 : isCrit ? 5.5 : 4.5,
+        color: overloadShell ? '#fde047' : isCrit ? '#ffee33' : bulletColor,
         trail: [],
         isCrit,
+        isIotaBomb: overloadShell,
         life: 0,
         maxLife: 2.0,
         hitEnemyIds: new Set(),
         bouncesRemaining: this.player.bouncingBullets || 0,
       });
+    }
+
+    // Lance Kappa: every fifth volley is a battlefield-wide piercing ray. The
+    // counter is shared and *every* wing's shot advances it, so a pair of Lances
+    // each gets a ray per five of their own shots — the ray leaves from whichever
+    // wing tipped the count over. (Gating this on the lead wing, as a shared pulse
+    // clock must, silently starves the second hull of its passive.)
+    if (stats.charId === 'kappa_lance') {
+      this.player.kappaShotCharge = (this.player.kappaShotCharge || 0) + 1;
+      if (this.player.kappaShotCharge >= 5) {
+        this.player.kappaShotCharge = 0;
+        this.fireLanceRay(origin, baseAngle, stats.bulletDamage);
+      }
     }
 
     sound.playShoot(1 + (count - 1) * 0.05);
@@ -1230,14 +1382,11 @@ export class GameEngine {
           if (dx * dx + dy * dy < hitR * hitR) {
             p.hitEnemyIds.add(enemy.id);
 
-            // Cryo freeze vulnerability (20% bonus damage)
-            const dmgMultiplier =
-              enemy.frozenTimer && enemy.frozenTimer > 0 ? 1 + this.player.cryoVulnerability : 1.0;
-            const finalDmg = Math.round(p.damage * dmgMultiplier);
+            // Status vulnerability: cryo freeze and the Lance mark both amplify hits.
+            const finalDmg = Math.round(p.damage * this.statusDamageMultiplier(enemy));
 
-            enemy.hp -= finalDmg;
             enemy.hitFlashTimer = 0.08;
-            this.player.totalDamageDealt += finalDmg;
+            this.damageEnemy(enemy, finalDmg);
 
             // Cryo slow application
             if (this.player.cryoSlow) {
@@ -1261,6 +1410,18 @@ export class GameEngine {
             enemy.y += (p.vy > 0 ? 1 : -1) * 3;
 
             this.spawnImpactSparks(p.x, p.y, p.color, 3);
+
+            // Fusion Iota: every shell detonates where it lands.
+            if (this.hasPilot('iota_fusion') && !p.isClusterSub) {
+              this.detonate(
+                enemy.x,
+                enemy.y,
+                p.isIotaBomb ? 130 : 60,
+                Math.round(p.damage * (p.isIotaBomb ? 1.0 : 0.4)),
+                p.isIotaBomb ? '#fde047' : '#f97316',
+                enemy.id
+              );
+            }
 
             // Refraction Matrix Passive (Alpha Prism): 40% chance on hit to refract 2 secondary shards
             if (
@@ -1439,7 +1600,29 @@ export class GameEngine {
       if (winged) {
         despawn = true;
 
-        if (this.player.naniteShieldActive) {
+        // Aegis Theta's kinetic plating parries part of the incoming fire straight
+        // back at the swarm; a parried bolt never touches the hull.
+        if (this.hasPilot('theta_aegis') && Math.random() < 0.35) {
+          const backAngle = Math.atan2(-ep.vy, -ep.vx);
+          this.projectiles.push({
+            id: this.nextProjId++,
+            x: contactX,
+            y: contactY,
+            vx: Math.cos(backAngle) * 12,
+            vy: Math.sin(backAngle) * 12,
+            damage: Math.round(ep.damage * 1.5),
+            pierce: 2,
+            radius: 5,
+            color: '#a3e635',
+            trail: [],
+            isCrit: false,
+            life: 0,
+            maxLife: 1.2,
+            hitEnemyIds: new Set(),
+          });
+          this.spawnImpactSparks(contactX, contactY, '#a3e635', 5);
+          sound.playClick(true);
+        } else if (this.player.naniteShieldActive) {
           // Nanite shield absorbs hit
           this.player.naniteShieldActive = false;
           this.player.naniteShieldTimer = 0;
@@ -1457,24 +1640,28 @@ export class GameEngine {
           });
           sound.playClick(true);
         } else if (this.player.invincibleTimer <= 0) {
-          this.player.hp -= ep.damage;
-          this.player.timeSinceLastDamage = 0;
-          this.player.invincibleTimer = 0.4;
-          this.triggerScreenShake(7);
-          sound.playPlayerHit();
+          const incomingDmg = ep.damage - this.soakWithTempShield(ep.damage);
 
-          if (this.floatingTexts.length < 20) {
-            this.addFloatingText(contactX, contactY - 15, `-${ep.damage}`, '#ff2255', true);
-          }
+          if (incomingDmg > 0) {
+            this.player.hp -= incomingDmg;
+            this.player.timeSinceLastDamage = 0;
+            this.player.invincibleTimer = 0.4;
+            this.triggerScreenShake(7);
+            sound.playPlayerHit();
 
-          // Retaliation thorns trigger
-          if (this.player.retaliationThorns) {
-            this.triggerRetaliationThorns();
-          }
+            if (this.floatingTexts.length < 20) {
+              this.addFloatingText(contactX, contactY - 15, `-${incomingDmg}`, '#ff2255', true);
+            }
 
-          if (this.player.hp <= 0) {
-            this.handlePlayerDeath();
-            return;
+            // Retaliation thorns trigger
+            if (this.player.retaliationThorns) {
+              this.triggerRetaliationThorns();
+            }
+
+            if (this.player.hp <= 0) {
+              this.handlePlayerDeath();
+              return;
+            }
           }
         }
       }
@@ -1514,6 +1701,275 @@ export class GameEngine {
         hitEnemyIds: new Set(),
       });
     }
+  }
+
+  /**
+   * How much a status effect amplifies every hit on this enemy. Cryo freeze and
+   * Lance Kappa's mark stack, and both live here so nothing re-derives them.
+   */
+  private statusDamageMultiplier(e: Enemy): number {
+    let mult = 1;
+    if (e.frozenTimer && e.frozenTimer > 0) mult *= 1 + this.player.cryoVulnerability;
+    if (e.markedTimer && e.markedTimer > 0) mult *= 1.25;
+    return mult;
+  }
+
+  /**
+   * The one door player damage goes through: it books the hit and, while Siphon
+   * Eta's harvest is up, converts a third of it back into health.
+   */
+  private damageEnemy(e: Enemy, amount: number): void {
+    e.hp -= amount;
+    this.player.totalDamageDealt += amount;
+
+    if (
+      this.hasPilot('eta_siphon') &&
+      this.player.isSkillActive &&
+      this.player.hp < this.player.maxHp
+    ) {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + amount * 0.3);
+    }
+  }
+
+  /** Spends stored shield points on an incoming hit; returns how much it soaked. */
+  private soakWithTempShield(amount: number): number {
+    const shield = this.player.tempShield || 0;
+    if (shield <= 0) return 0;
+
+    const absorbed = Math.min(shield, amount);
+    this.player.tempShield = shield - absorbed;
+    this.spawnImpactSparks(this.player.x, this.player.y, '#fda4af', 4);
+    sound.playClick(true);
+    return absorbed;
+  }
+
+  /**
+   * Fusion Iota blast: everything inside the radius takes the damage, and the
+   * set-pieces (melt cores) also leave a burn behind.
+   */
+  private detonate(
+    x: number,
+    y: number,
+    radius: number,
+    damage: number,
+    color: string,
+    excludeId?: number,
+    burnSeconds = 0
+  ): void {
+    if (this.shockwaves.length < 14) {
+      this.shockwaves.push({
+        id: Math.random(),
+        x,
+        y,
+        radius: 8,
+        maxRadius: radius,
+        color,
+        width: 3,
+        life: 0,
+        maxLife: 0.28,
+      });
+    }
+    this.spawnImpactSparks(x, y, color, 4);
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (e.id === excludeId) continue;
+
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const reach = radius + e.radius;
+      if (dx * dx + dy * dy > reach * reach) continue;
+
+      e.hitFlashTimer = 0.08;
+      if (burnSeconds > 0) {
+        e.burnTimer = Math.max(e.burnTimer || 0, burnSeconds);
+        e.burnDps = Math.round(this.player.bulletDamage * 0.6);
+      }
+      this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)));
+    }
+  }
+
+  /** Fusion Iota's Meltdown: five cores primed in a ring around the hull. */
+  private deployMeltCores(): void {
+    const count = 5;
+    const ring = 90;
+    const margin = 30;
+
+    for (let i = 0; i < count; i++) {
+      const a = this.player.angle + (i * Math.PI * 2) / count;
+      this.meltCores.push({
+        id: this.nextMeltId++,
+        x: Math.max(margin, Math.min(this.width - margin, this.player.x + Math.cos(a) * ring)),
+        y: Math.max(margin, Math.min(this.height - margin, this.player.y + Math.sin(a) * ring)),
+        timer: 1.5,
+        fuse: 1.5,
+      });
+    }
+  }
+
+  private updateMeltCores(dt: number) {
+    let anyDetonated = false;
+
+    for (let i = this.meltCores.length - 1; i >= 0; i--) {
+      const core = this.meltCores[i];
+      core.timer -= dt;
+      if (core.timer > 0) continue;
+
+      this.meltCores.splice(i, 1);
+      this.detonate(
+        core.x,
+        core.y,
+        110,
+        Math.round(this.player.bulletDamage * 2.0),
+        '#f97316',
+        undefined,
+        3
+      );
+      this.triggerScreenShake(4);
+      anyDetonated = true;
+    }
+
+    // The chain goes off on one frame, so it gets one explosion, not five.
+    if (anyDetonated) sound.playExplosion(true);
+  }
+
+  private updateBeams(dt: number) {
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      const beam = this.beams[i];
+      beam.life += dt;
+      if (beam.life >= beam.maxLife) this.beams.splice(i, 1);
+    }
+  }
+
+  /**
+   * Lance Kappa's passive ray: a hitscan line the width of the field that damages
+   * everything standing on it and marks the survivors.
+   */
+  private fireLanceRay(origin: { x: number; y: number }, angle: number, baseDamage: number) {
+    const length = Math.max(this.width, this.height) * 1.6;
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    const band = 26;
+    const rayDmg = Math.round(baseDamage * 1.8);
+
+    this.beams.push({
+      id: this.nextBeamId++,
+      x1: origin.x,
+      y1: origin.y,
+      x2: origin.x + dirX * length,
+      y2: origin.y + dirY * length,
+      color: '#818cf8',
+      width: 9,
+      life: 0,
+      maxLife: 0.22,
+    });
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      const rx = e.x - origin.x;
+      const ry = e.y - origin.y;
+      if (rx * dirX + ry * dirY < 0) continue;
+      if (Math.abs(rx * dirY - ry * dirX) > band + e.radius) continue;
+
+      e.hitFlashTimer = 0.1;
+      e.markedTimer = 4;
+      const hit = Math.round(rayDmg * this.statusDamageMultiplier(e));
+      this.damageEnemy(e, hit);
+      if (this.floatingTexts.length < 20) {
+        this.addFloatingText(e.x, e.y - 14, `${hit}`, '#818cf8', false);
+      }
+    }
+
+    this.triggerScreenShake(3);
+    sound.playLaserShot();
+  }
+
+  /** Lance Kappa's ultimate, fired when the windup runs out. */
+  private fireKappaSpear(angle: number) {
+    const length = Math.max(this.width, this.height) * 1.8;
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    const band = 42;
+    const spearDmg = Math.round(this.player.bulletDamage * 5);
+
+    this.beams.push({
+      id: this.nextBeamId++,
+      x1: this.player.x,
+      y1: this.player.y,
+      x2: this.player.x + dirX * length,
+      y2: this.player.y + dirY * length,
+      color: '#5eead4',
+      width: 26,
+      life: 0,
+      maxLife: 0.45,
+    });
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      const rx = e.x - this.player.x;
+      const ry = e.y - this.player.y;
+      if (rx * dirX + ry * dirY < 0) continue;
+      if (Math.abs(rx * dirY - ry * dirX) > band + e.radius) continue;
+
+      e.hitFlashTimer = 0.12;
+      const hit = Math.round(spearDmg * this.statusDamageMultiplier(e));
+      this.damageEnemy(e, hit);
+      e.x += dirX * 120;
+      e.y += dirY * 120;
+      if (this.floatingTexts.length < 20) {
+        this.addFloatingText(e.x, e.y - 16, `${hit}`, '#5eead4', true);
+      }
+    }
+
+    this.shockwaves.push({
+      id: Math.random(),
+      x: this.player.x,
+      y: this.player.y,
+      radius: 20,
+      maxRadius: Math.max(this.width, this.height) * 0.8,
+      color: '#5eead4',
+      width: 4,
+      life: 0,
+      maxLife: 0.5,
+    });
+
+    this.triggerScreenShake(12);
+    sound.playLaserShot();
+  }
+
+  /** The parting shockwave Aegis Theta leaves when its charge burns out. */
+  private releaseChargeShockwave() {
+    const radius = 190;
+    const dmg = Math.round(this.player.bulletDamage * 1.5);
+
+    this.shockwaves.push({
+      id: Math.random(),
+      x: this.player.x,
+      y: this.player.y,
+      radius: 20,
+      maxRadius: radius,
+      color: '#a3e635',
+      width: 4,
+      life: 0,
+      maxLife: 0.4,
+    });
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      const dx = e.x - this.player.x;
+      const dy = e.y - this.player.y;
+      const reach = radius + e.radius;
+      if (dx * dx + dy * dy > reach * reach) continue;
+
+      const away = Math.atan2(dy, dx);
+      e.x += Math.cos(away) * 60;
+      e.y += Math.sin(away) * 60;
+      e.hitFlashTimer = 0.1;
+      this.damageEnemy(e, Math.round(dmg * this.statusDamageMultiplier(e)));
+    }
+
+    this.triggerScreenShake(7);
+    sound.playExplosion(false);
   }
 
   private updateEnemySpawning(dt: number) {
@@ -1641,6 +2097,17 @@ export class GameEngine {
       if (e.frozenTimer && e.frozenTimer > 0) {
         e.frozenTimer -= dt;
         currentSlow *= this.player.cryoSlowMultiplier;
+      }
+
+      if (e.markedTimer && e.markedTimer > 0) {
+        e.markedTimer -= dt;
+      }
+
+      // Fusion Iota burn: damage over time with no knockback and no hit flash.
+      if (e.burnTimer && e.burnTimer > 0) {
+        e.burnTimer -= dt;
+        e.hp -= (e.burnDps || 0) * dt;
+        if (Math.random() < 0.12) this.spawnImpactSparks(e.x, e.y, '#f97316', 1);
       }
 
       if (e.hp <= 0) {
@@ -1824,6 +2291,24 @@ export class GameEngine {
       const wingContact =
         d1Sq < hitSq || (isTwin && d2Sq < hitSq);
       if (wingContact) {
+        // Aegis Theta rams: whatever it touches eats kinetic damage on top of
+        // whatever the contact costs the hull. Mid-charge it hits for 300% — and
+        // the charge carries its own i-frames, so that one is free.
+        if (this.hasPilot('theta_aegis')) {
+          const charging = this.player.chargeTimer > 0;
+          const ramDmg = Math.round(this.player.bulletDamage * (charging ? 3.0 : 1.2));
+          const away = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+          const shove = charging ? 90 : 42;
+          e.x += Math.cos(away) * shove;
+          e.y += Math.sin(away) * shove;
+          e.hitFlashTimer = 0.1;
+          this.damageEnemy(e, ramDmg);
+          if (this.floatingTexts.length < 20) {
+            this.addFloatingText(e.x, e.y - 12, `${ramDmg}`, '#a3e635', charging);
+          }
+          sound.playHit();
+        }
+
         if (this.player.naniteShieldActive) {
           this.player.naniteShieldActive = false;
           this.player.naniteShieldTimer = 0;
@@ -1854,23 +2339,27 @@ export class GameEngine {
             e.hitFlashTimer = 0.08;
           }
 
-          this.player.hp -= incomingDmg;
-          this.player.timeSinceLastDamage = 0;
-          this.player.invincibleTimer = 0.45;
-          this.triggerScreenShake(8);
-          sound.playPlayerHit();
+          incomingDmg -= this.soakWithTempShield(incomingDmg);
 
-          if (this.floatingTexts.length < 20) {
-            this.addFloatingText(this.player.x, this.player.y - 15, `-${incomingDmg}`, '#ff2255', true);
-          }
+          if (incomingDmg > 0) {
+            this.player.hp -= incomingDmg;
+            this.player.timeSinceLastDamage = 0;
+            this.player.invincibleTimer = 0.45;
+            this.triggerScreenShake(8);
+            sound.playPlayerHit();
 
-          if (this.player.retaliationThorns) {
-            this.triggerRetaliationThorns();
-          }
+            if (this.floatingTexts.length < 20) {
+              this.addFloatingText(this.player.x, this.player.y - 15, `-${incomingDmg}`, '#ff2255', true);
+            }
 
-          if (this.player.hp <= 0) {
-            this.handlePlayerDeath();
-            return;
+            if (this.player.retaliationThorns) {
+              this.triggerRetaliationThorns();
+            }
+
+            if (this.player.hp <= 0) {
+              this.handlePlayerDeath();
+              return;
+            }
           }
         }
       }
@@ -1951,6 +2440,24 @@ export class GameEngine {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + 2);
       if (this.floatingTexts.length < 20) {
         this.addFloatingText(this.player.x, this.player.y - 14, '+2 HP', '#10b981', false);
+      }
+    }
+
+    // Siphon Eta Passive: every kill feeds the lattice. Overheal does not
+    // evaporate, it becomes rate of fire — which is what pays for diving in.
+    if (this.hasPilot('eta_siphon')) {
+      const hullBefore = this.player.hp;
+      const healed = Math.min(1.5, Math.max(0, this.player.maxHp - hullBefore));
+      this.player.hp = hullBefore + healed;
+      if (healed < 1.5) {
+        this.player.siphonHasteTimer = Math.min(3, (this.player.siphonHasteTimer || 0) + 0.5);
+      }
+      // Blood Harvest banks each kill as ablative plating.
+      if (this.player.isSkillActive) {
+        this.player.tempShield = Math.min(40, (this.player.tempShield || 0) + 2);
+        if (this.floatingTexts.length < 20) {
+          this.addFloatingText(this.player.x, this.player.y - 22, '+2 SHIELD', '#fda4af', false);
+        }
       }
     }
 

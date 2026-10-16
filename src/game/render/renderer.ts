@@ -9,6 +9,8 @@ import {
   Shockwave,
   Satellite,
   SingularityVortex,
+  Beam,
+  MeltCore,
 } from '../types';
 import { drawCharacterShip, getCharacterDef } from '../characters';
 import { drawResonanceArc } from '../resonanceArc';
@@ -30,6 +32,8 @@ export interface RenderState {
   shockwaves: Shockwave[];
   satellites: Satellite[];
   vortices: SingularityVortex[];
+  beams: Beam[];
+  meltCores: MeltCore[];
   width: number;
   height: number;
   pulseAnimTime: number;
@@ -56,32 +60,38 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   // 3. Draw Shockwaves
   renderShockwaves(ctx, frame);
 
-  // 4. Draw Drop Gems
+  // 4. Draw Primed Melt Cores (ground hazard, under everything that moves)
+  renderMeltCores(ctx, frame);
+
+  // 5. Draw Drop Gems
   renderGems(ctx, frame);
 
-  // 5. Draw Enemies & Telegraphs
+  // 6. Draw Enemies & Telegraphs
   renderEnemies(ctx, frame);
 
-  // 6. Draw Orbit Satellites & Drones
+  // 7. Draw Orbit Satellites & Drones
   renderSatellites(ctx, frame);
   renderDrones(ctx, frame);
 
-  // 7. Draw Enemy Projectiles
+  // 8. Draw Enemy Projectiles
   renderEnemyProjectiles(ctx, frame);
 
-  // 8. Draw Player Projectiles (High-performance neon beam)
+  // 9. Draw Player Projectiles (High-performance neon beam)
   renderProjectiles(ctx, frame);
 
-  // 9. Draw Player
+  // 10. Draw Energy Lances & Rays
+  renderBeams(ctx, frame);
+
+  // 11. Draw Player
   renderPlayer(ctx, frame);
 
-  // 10. Draw Debris & Spark Particles
+  // 12. Draw Debris & Spark Particles
   renderParticles(ctx, frame);
 
-  // 11. Draw Floating Combat Text
+  // 13. Draw Floating Combat Text
   renderFloatingTexts(ctx, frame);
 
-  // 12. Draw Pointer Reticle (mouse steering only)
+  // 14. Draw Pointer Reticle (mouse steering only)
   renderMouseCursor(ctx, frame);
 
   ctx.restore();
@@ -214,6 +224,77 @@ export function renderShockwaves(ctx: CanvasRenderingContext2D, frame: RenderSta
     ctx.stroke();
     ctx.restore();
   }
+}
+
+/** Primed Fusion Iota cores: a spinning diamond plus a fuse ring that closes in. */
+export function renderMeltCores(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  for (const core of frame.meltCores) {
+    const progress = 1 - Math.max(0, core.timer) / core.fuse;
+    const pulse = 1 + Math.sin(frame.pulseAnimTime * 14) * 0.12;
+
+    ctx.save();
+    ctx.translate(core.x, core.y);
+    ctx.rotate(frame.pulseAnimTime * 3);
+    ctx.strokeStyle = '#f97316';
+    ctx.shadowColor = '#f97316';
+    ctx.shadowBlur = 16;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let s = 0; s < 4; s++) {
+      const a = (s * Math.PI) / 2;
+      const px = Math.cos(a) * 12 * pulse;
+      const py = Math.sin(a) * 12 * pulse;
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = '#fde047';
+    ctx.beginPath();
+    ctx.arc(core.x, core.y, 4 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(253, 224, 71, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(core.x, core.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** Lance Kappa's rays: additive white-hot lines with a coloured halo. */
+export function renderBeams(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (frame.beams.length === 0) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+
+  for (const beam of frame.beams) {
+    const alpha = Math.max(0, 1 - beam.life / beam.maxLife);
+
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.strokeStyle = beam.color;
+    ctx.lineWidth = beam.width * 2;
+    ctx.beginPath();
+    ctx.moveTo(beam.x1, beam.y1);
+    ctx.lineTo(beam.x2, beam.y2);
+    ctx.stroke();
+
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = beam.width * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(beam.x1, beam.y1);
+    ctx.lineTo(beam.x2, beam.y2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 export function renderGems(ctx: CanvasRenderingContext2D, frame: RenderState) {
@@ -613,8 +694,28 @@ export function renderPlayer(ctx: CanvasRenderingContext2D, frame: RenderState) 
     ctx.restore();
   }
 
-  const twinId = isPaired(frame.player) ? frame.player.twinPilotId : undefined;
-  const wings = getTwinPositions(frame.player);
+  // Siphon Eta's banked blood shield, an octagon of its own
+  if (frame.player.tempShield > 0) {
+    ctx.save();
+    ctx.rotate(frame.pulseAnimTime * 2.2);
+    ctx.strokeStyle = '#fda4af';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#fda4af';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    for (let s = 0; s < 8; s++) {
+      const a = (s * Math.PI) / 4;
+      const px = Math.cos(a) * (frame.player.radius * 1.35);
+      const py = Math.sin(a) * (frame.player.radius * 1.35);
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const twinId = isPaired(frame.player) ? frame.player.twinPilotId : undefined;  const wings = getTwinPositions(frame.player);
   const offX = wings.p1.x - frame.player.x;
   const offY = wings.p1.y - frame.player.y;
 

@@ -6,6 +6,10 @@ import { gammaViper, drawGammaViper } from './gammaViper';
 import { deltaChronos, drawDeltaChronos } from './deltaChronos';
 import { epsilonCarrier, drawEpsilonCarrier } from './epsilonCarrier';
 import { zetaAurora, drawZetaAurora } from './zetaAurora';
+import { etaSiphon, drawEtaSiphon } from './etaSiphon';
+import { thetaAegis, drawThetaAegis } from './thetaAegis';
+import { iotaFusion, drawIotaFusion } from './iotaFusion';
+import { kappaLance, drawKappaLance } from './kappaLance';
 
 export type { ShipDrawer } from './shipDraw';
 
@@ -17,6 +21,10 @@ export const CHARACTERS: CharacterDef[] = [
   deltaChronos,
   epsilonCarrier,
   zetaAurora,
+  etaSiphon,
+  thetaAegis,
+  iotaFusion,
+  kappaLance,
 ];
 
 /** How each chassis looks. Kept beside CHARACTERS so a new hull is one file. */
@@ -27,6 +35,10 @@ const SHIP_DRAWERS: Record<CharacterId, ShipDrawer> = {
   delta_chronos: drawDeltaChronos,
   epsilon_carrier: drawEpsilonCarrier,
   zeta_aurora: drawZetaAurora,
+  eta_siphon: drawEtaSiphon,
+  theta_aegis: drawThetaAegis,
+  iota_fusion: drawIotaFusion,
+  kappa_lance: drawKappaLance,
 };
 
 export function getCharacterDef(id: CharacterId): CharacterDef {
