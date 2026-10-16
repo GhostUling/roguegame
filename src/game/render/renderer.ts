@@ -11,11 +11,19 @@ import {
   SingularityVortex,
   Beam,
   MeltCore,
+  Turret,
+  Clone,
+  OrbitShell,
+  Ally,
 } from '../types';
 import { drawCharacterShip, getCharacterDef } from '../characters';
 import { drawResonanceArc } from '../resonanceArc';
 import { getTwinPositions, hasPilot } from '../pilots';
 import { isPaired } from '../modes';
+import { TURRET_FADE } from '../turrets';
+import { GRID_CELL, GRID_FLASH } from '../gridVerdict';
+import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
+import { ORBIT_SHELL_RADIUS } from '../orbitCage';
 
 /**
  * Everything the renderer reads. GameEngine satisfies this shape structurally, so
@@ -34,6 +42,10 @@ export interface RenderState {
   vortices: SingularityVortex[];
   beams: Beam[];
   meltCores: MeltCore[];
+  turrets: Turret[];
+  clones: Clone[];
+  orbitShells: OrbitShell[];
+  allies: Ally[];
   width: number;
   height: number;
   pulseAnimTime: number;
@@ -73,28 +85,37 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   renderSatellites(ctx, frame);
   renderDrones(ctx, frame);
 
-  // 8. Draw Enemy Projectiles
+  // 8. Draw Friendly Units (turrets, clones, allies — one marker for all three)
+  renderTurrets(ctx, frame);
+  renderClones(ctx, frame);
+  renderAllies(ctx, frame);
+
+  // 9. Draw Enemy Projectiles
   renderEnemyProjectiles(ctx, frame);
 
-  // 9. Draw Player Projectiles (High-performance neon beam)
+  // 10. Draw Player Projectiles & Orbit Shells (high-performance neon beam)
   renderProjectiles(ctx, frame);
+  renderOrbitShells(ctx, frame);
 
-  // 10. Draw Energy Lances & Rays
+  // 11. Draw Energy Lances & Rays
   renderBeams(ctx, frame);
 
-  // 11. Draw Player
+  // 12. Draw Player
   renderPlayer(ctx, frame);
 
-  // 12. Draw Debris & Spark Particles
+  // 13. Draw Debris & Spark Particles
   renderParticles(ctx, frame);
 
-  // 13. Draw Floating Combat Text
+  // 14. Draw Floating Combat Text
   renderFloatingTexts(ctx, frame);
 
-  // 14. Draw Pointer Reticle (mouse steering only)
+  // 15. Draw Pointer Reticle (mouse steering only)
   renderMouseCursor(ctx, frame);
 
-  // 15. Overflow Hypercrit White-Out (last, so it sits over everything)
+  // 16. Overflow Grid Verdict Lattice (a screen-space overlay, so it sits late)
+  renderGridVerdict(ctx, frame);
+
+  // 17. Overflow Hypercrit White-Out (last, so it sits over everything)
   renderScreenFlash(ctx, frame);
 
   ctx.restore();
@@ -109,6 +130,160 @@ export function renderScreenFlash(ctx: CanvasRenderingContext2D, frame: RenderSt
   ctx.globalAlpha = Math.min(1, t / 0.18) * 0.55;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(-60, -60, frame.width + 120, frame.height + 120);
+  ctx.restore();
+}
+
+/**
+ * Grid Verdict's lattice. The cell size is the same constant the engine's scan
+ * cuts with, so a line the player can see is a line that bites. One path for the
+ * whole lattice, and no glow work per line.
+ */
+export function renderGridVerdict(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  const flash = frame.player.gridFlash;
+  if (!flash || flash <= 0) return;
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, flash / GRID_FLASH) * 0.5;
+  ctx.strokeStyle = '#a855f7';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = 0; x <= frame.width; x += GRID_CELL) {
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, frame.height);
+  }
+  for (let y = 0; y <= frame.height; y += GRID_CELL) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(frame.width, y);
+  }
+  ctx.stroke();
+
+  // A brighter band on each line gives the cut its edge without a second pass.
+  ctx.globalAlpha *= 0.6;
+  ctx.strokeStyle = '#e9d5ff';
+  ctx.lineWidth = 0.75;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Prism Turrets: a hex emplacement with a barrel that tracks what it is shooting.
+ * Everything on the player's side carries the same marker, so the turret itself
+ * is drawn large enough to read as a structure rather than a passing round.
+ */
+export function renderTurrets(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  for (const t of frame.turrets) {
+    // An expiring turret dims over its last moment so its loss is legible.
+    const remaining = t.maxLife - t.life;
+    const brightness = remaining < TURRET_FADE ? Math.max(0.15, remaining / TURRET_FADE) : 1;
+
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.globalAlpha = 0.35 + 0.65 * brightness;
+
+    ctx.strokeStyle = '#7dd3fc';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(t.aimAngle) * 22, Math.sin(t.aimAngle) * 22);
+    ctx.stroke();
+
+    ctx.beginPath();
+    for (let s = 0; s < 6; s++) {
+      const a = (s * Math.PI) / 3 + frame.pulseAnimTime * 0.8;
+      const px = Math.cos(a) * 14;
+      const py = Math.sin(a) * 14;
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(125, 211, 252, 0.18)';
+    ctx.fill();
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    drawFriendlyMarker(ctx, 14, frame.pulseAnimTime);
+    ctx.restore();
+  }
+}
+
+/** Mirror Clones: the player's own hull, ghosted, wearing the friendly marker. */
+export function renderClones(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  for (const c of frame.clones) {
+    const remaining = c.maxLife - c.life;
+    const fading = remaining < 1.5 ? Math.max(0.2, remaining / 1.5) : 1;
+
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.globalAlpha = 0.45 * fading;
+    drawCharacterShip(ctx, frame.player.characterId, 16, c.aimAngle, frame.pulseAnimTime);
+    ctx.globalAlpha = fading;
+    drawFriendlyMarker(ctx, 16, frame.pulseAnimTime);
+    ctx.restore();
+  }
+}
+
+/** Revived Allies: the corpse's own silhouette, edged and rung in the friendly hue. */
+export function renderAllies(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  for (const a of frame.allies) {
+    const remaining = a.maxLife - a.life;
+    const fading = remaining < 2 ? Math.max(0.2, remaining / 2) : 1;
+
+    ctx.save();
+    ctx.translate(a.x, a.y);
+    ctx.globalAlpha = fading;
+
+    ctx.rotate(a.rotation);
+    ctx.beginPath();
+    for (let s = 0; s < a.sides; s++) {
+      const ang = (s * 2 * Math.PI) / a.sides;
+      const px = Math.cos(ang) * a.radius;
+      const py = Math.sin(ang) * a.radius;
+      if (s === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = a.fillColor;
+    ctx.fill();
+    // The edge is recoloured but the body is not: the shape stays recognisable as
+    // the thing the player just killed, which is the point of the card.
+    ctx.strokeStyle = FRIENDLY_COLOR;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.rotate(-a.rotation);
+
+    drawFriendlyMarker(ctx, a.radius, frame.pulseAnimTime);
+    ctx.restore();
+  }
+}
+
+/** Orbit Cage's shells: cached glow sprites riding a faint orbit line. */
+export function renderOrbitShells(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (frame.orbitShells.length === 0) return;
+
+  const radius = frame.player.orbitShellRadius;
+  const cx = frame.player.x;
+  const cy = frame.player.y;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  ctx.strokeStyle = '#c084fc';
+  ctx.globalAlpha = 0.16;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const sprite = getGlowSprite('#c084fc', true);
+  ctx.globalAlpha = 1;
+  for (const shell of frame.orbitShells) {
+    const x = cx + Math.cos(shell.angle) * radius;
+    const y = cy + Math.sin(shell.angle) * radius;
+    ctx.drawImage(sprite, x - 32, y - 32);
+  }
+
   ctx.restore();
 }
 

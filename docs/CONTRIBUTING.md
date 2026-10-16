@@ -40,7 +40,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 |---|---|---|
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
 | `engine.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线（技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复） | 绘制细节（在 renderer）、数值表（在数据层） |
-| `render/renderer.ts` | `renderScene` 内的 15 个编号 pass（含超暴击全屏闪白）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
+| `render/renderer.ts` | `renderScene` 内的 17 个编号 pass（含超暴击全屏闪白、网格裁决的网格）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
 | `modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
 | `characters/index.ts` | 聚合 `CHARACTERS`、`getCharacterDef`、`drawCharacterShip` | 具体数值 |
@@ -49,6 +49,8 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 codexData） |
 | `overflowUpgrades.ts` | 溢流模式专属卡池 18 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 modes） |
 | `upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
+| `turrets.ts` / `gridVerdict.ts` / `clones.ts` / `orbitCage.ts` / `allies.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、轨道弹转速与再命中闸门、友军属性推导），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
+| `render/friendlyMarker.ts` | 我方单位的统一标记（色值 / 环距 / 线宽 / `drawFriendlyMarker`），炮台、分身、友军三处渲染共用 | 各单位自身的造型 |
 | `player.ts` | `createPlayer`：把选定机体（单机或双机）折算成初始 `Player` | 逐帧状态变更 |
 | `pilots.ts` | `hasPilot` / `getTwinPositions` / `getPilotWeaponStats` | 引擎状态读写、模式判定（在 modes） |
 | `drones.ts` | 无人机/护卫/轨道炮的射速与伤害算式：`interceptorInterval`、`interceptorShotDamage`、`railgunShotDamage` 等 | 逐帧状态（在 engine） |
@@ -137,6 +139,16 @@ requestAnimationFrame
 6. 强化只改 `player` 字段即可，双子模式会自动分摊到两机。
 
 **加到溢流池**：改 `overflowUpgrades.ts`（不是 `upgrades.ts`），其余同上；区别有三处——① 不进 `getRandomUpgrades` 的默认池，靠 `GAME_MODES.overflow.cardPool = 'overflow'` 由 `poolForMode` 分发；② `codexData.ts` 目前只覆盖标准池，溢流池的图鉴分节是待办，所以**不要在 `codexData.ts` 里加溢流条目**（`__tests__/codex.test.ts` 断言两边的 key 集合完全相等，加了就红）；③ 逐级载荷测试在 `__tests__/overflowUpgrades.test.ts`，同样的「每级必须改变状态」规则，外加跨池 key 不冲突的断言。
+
+**加一张「新系统」卡**（自带引擎行为的卡，如棱镜塔 / 网格裁决）：卡表条目照上一条；另外——
+
+1. **数值与算式放一个纯模块**（`turrets.ts` / `gridVerdict.ts` 是样板），引擎与卡面都从它读，卡面文案里的数字用模板串引用常量，避免文案漂移。模块里的函数要能在 `__tests__/` 里纯测。
+2. **任何新增的子弹来源都必须标 `isSecondary: true` 且 `isCrit: false`**。命中衍生卡（子弹繁殖、延迟殉爆、碎片风暴、链电、暴击停帧、超暴击）都以这两个标记判定，少了标记，一个炮台就能把玩家的卡组指数级放大。这是 2026-10 六张新系统卡共同的前置约束。
+3. **新对象数组要有自己的上限**，并且不要塞进 `enemies`：自动索敌会挑最近敌人，友军/召唤物混进去会把玩家火力吸走，爆炸与处决也会误伤它们。
+4. **周期运动用 `f(t)` 而不是 `+= ω·dt`**：3× 倍速下单帧步长最大 0.24s，积分会漂。
+5. **绘制不开 `shadowBlur`、不在循环里建渐变**，走 `getGlowSprite` 缓存或纯描边；新增可见物要给 `RenderState` 加字段，渲染层不判断模式字符串。
+6. 需要冻结/时停时，读 `player.freezeTimer` 的那一段（`worldFrozen`）而不是另起一套。**统一约定**：`worldFrozen` 只冻结敌群（刷怪 / 移动 / 敌方子弹），玩家自己的一切（机体、炮台、分身、友军、轨道弹）照常运转。
+7. **我方单位必须带 `drawFriendlyMarker`**（`render/friendlyMarker.ts`）：同一枚环 + 尖角，敌人一律不带。新增我方单位时不要自己画一套识别记号。
 
 ### 加一种敌人
 1. `types.ts` 的 `EnemyType` 联合类型加一项

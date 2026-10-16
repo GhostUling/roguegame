@@ -82,6 +82,11 @@ describe('every overflow level does something', () => {
       'hypercrit',
       'overdrive_engine',
       'gambler_pact',
+      'prism_turret',
+      'grid_verdict',
+      'orbit_cage',
+      'mirror_self',
+      'necro_fleet',
     ];
     for (const key of tableDriven) {
       const def = findUpgrade(key);
@@ -150,6 +155,23 @@ describe('overflow per-level ladders', () => {
     def.apply(p, 1);
     expect(p.maxHp).toBe(1);
     expect(p.hp).toBe(1);
+  });
+
+  it('deploys turrets sooner and hits harder on every rung', () => {
+    expect(atEachLevel('prism_turret', (p) => p.turretInterval)).toEqual([25, 20, 15]);
+    expect(atEachLevel('prism_turret', (p) => p.turretDamageScale)).toEqual([0.8, 1.0, 1.2]);
+  });
+
+  it('shortens the verdict cycle and sharpens the cut', () => {
+    expect(atEachLevel('grid_verdict', (p) => p.gridInterval)).toEqual([10, 7]);
+    expect(atEachLevel('grid_verdict', (p) => p.gridDamageScale)).toEqual([2.0, 3.0]);
+  });
+
+  it('fields the whole squad sooner and harder on every rung', () => {
+    expect(atEachLevel('mirror_self', (p) => p.cloneInterval)).toEqual([40, 30, 20]);
+    expect(atEachLevel('mirror_self', (p) => p.cloneDamageScale)).toEqual([0.5, 0.6, 0.7]);
+    expect(atEachLevel('necro_fleet', (p) => p.necroChance)).toEqual([0.25, 0.35, 0.5]);
+    expect(atEachLevel('orbit_cage', (p) => p.orbitShellRadius)).toEqual([70, 110, 150]);
   });
 });
 

@@ -50,8 +50,13 @@ src/
       shipDraw.ts           机体绘制共用画笔（线宽单位、机头）
     enemyTypes.ts         7 种敌人数据表 + 波次表
     upgrades.ts           标准池 25 条强化数据表（+ atLevel 逐级取值）
-    overflowUpgrades.ts   溢流模式专属卡池 18 张（独立表，数值不讲等价）
+    overflowUpgrades.ts   溢流模式专属卡池 23 张（独立表，数值不讲等价）
     upgradePools.ts       卡池分发与跨池查表（poolForMode / findUpgrade）
+    turrets.ts            棱镜炮台：寿命、射速、上限、伤害算式
+    gridVerdict.ts        网格裁决：格距、僵停时长、到最近网格线的纯函数
+    clones.ts             镜像分身：寿命、站位、伤害；orbitCage.ts 轨道弹的转速与再命中闸门
+    allies.ts             亡者编队：上限、寿命、接触伤害、由尸体推导友军属性
+    render/friendlyMarker.ts  我方单位的统一标记（炮台/分身/友军共用一枚环）
     player.ts             开局玩家状态构造（合体属性在这里算）
     pilots.ts             双机编队 / 副机属性换算
     resonanceArc.ts       双子共鸣电弧绘制

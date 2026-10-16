@@ -1,4 +1,8 @@
 import { UpgradeDefinition, atLevel } from './upgrades';
+import { MAX_TURRETS, TURRET_LIFETIME } from './turrets';
+import { GRID_CELL, GRID_STUN } from './gridVerdict';
+import { CLONE_LIFETIME, MAX_CLONES } from './clones';
+import { MAX_ALLIES, ALLY_LIFETIME } from './allies';
 
 /**
  * The Overflow card pool. Deliberately its own table, never merged into
@@ -30,6 +34,14 @@ const LVL_OVERDRIVE_SPEED = [1.35, 1.6, 1.9];
 const LVL_GAMBLER_ROLLS = [1, 2, 3];
 const LVL_HYPERCRIT = [0.15, 0.2, 0.25];
 const LVL_SPAWN_SHOT = [1, 2, 3];
+const LVL_TURRET_INTERVAL = [25, 20, 15];
+const LVL_TURRET_DAMAGE = [0.8, 1.0, 1.2];
+const LVL_GRID_INTERVAL = [10, 7];
+const LVL_GRID_DAMAGE = [2.0, 3.0];
+const LVL_CLONE_INTERVAL = [40, 30, 20];
+const LVL_CLONE_DAMAGE = [0.5, 0.6, 0.7];
+const LVL_ORBIT_RADIUS = [70, 110, 150];
+const LVL_NECRO_CHANCE = [0.25, 0.35, 0.5];
 
 /** Damage scale the Overflow cards apply to their own secondary payloads. */
 const OMNI_DAMAGE_SCALE = 0.6;
@@ -177,6 +189,38 @@ export const OVERFLOW_UPGRADES: UpgradeDefinition[] = [
   // 质变与打击感
   // ==========================================================================
   {
+    id: 'grid_verdict',
+    key: 'grid_verdict',
+    name: 'Grid Verdict',
+    nameZh: '网格裁决',
+    desc: `周期性把整片战场切成 ${GRID_CELL}px 网格：任何压在网格线上的几何体当场被切开并僵停。`,
+    category: 'energy',
+    rarity: 'legendary',
+    maxLevel: 2,
+    statDiffText: (_p, lvl = 1) =>
+      `每 ${atLevel(LVL_GRID_INTERVAL, lvl)}s 裁决一次（伤害 ×${atLevel(LVL_GRID_DAMAGE, lvl).toFixed(1)} · 僵停 ${GRID_STUN}s）`,
+    apply: (p, lvl) => {
+      p.gridInterval = atLevel(LVL_GRID_INTERVAL, lvl);
+      p.gridTimer = atLevel(LVL_GRID_INTERVAL, lvl);
+      p.gridDamageScale = atLevel(LVL_GRID_DAMAGE, lvl);
+    },
+  },
+  {
+    id: 'orbit_cage',
+    key: 'orbit_cage',
+    name: 'Orbit Cage',
+    nameZh: '轨道囚笼',
+    desc: '普攻不再向远处飞出去，改为绕着机体永续旋转的轨道弹。同一目标的再命中间隔就是你的开火间隔，所以射速越快，转速不变、命中越密。',
+    category: 'energy',
+    rarity: 'epic',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      `普攻改为轨道弹 · 半径 ${atLevel(LVL_ORBIT_RADIUS, lvl)}px · ${Math.max(1, Math.min(16, p.bulletCount))} 颗 · 再命中间隔 ${Math.max(120, Math.round(p.fireRate))}ms`,
+    apply: (p, lvl) => {
+      p.orbitShellRadius = atLevel(LVL_ORBIT_RADIUS, lvl);
+    },
+  },
+  {
     id: 'delayed_detonation',
     key: 'delayed_detonation',
     name: 'Delayed Detonation',
@@ -281,6 +325,59 @@ export const OVERFLOW_UPGRADES: UpgradeDefinition[] = [
       `暴击有 ${pct(atLevel(LVL_HYPERCRIT, lvl))} 几率升级为 ×${HYPERCRIT_MULTIPLIER} 超暴击`,
     apply: (p, lvl) => {
       p.hypercritChance = atLevel(LVL_HYPERCRIT, lvl);
+    },
+  },
+
+  // ==========================================================================
+  // 军团
+  // ==========================================================================
+  {
+    id: 'prism_turret',
+    key: 'prism_turret',
+    name: 'Prism Turret',
+    nameZh: '棱镜塔',
+    desc: `在机体停留过的地方留下自动索敌的棱镜炮台，自己开火、自己消失，场上最多 ${MAX_TURRETS} 座。`,
+    category: 'summon',
+    rarity: 'epic',
+    maxLevel: 3,
+    statDiffText: (_p, lvl = 1) =>
+      `每 ${atLevel(LVL_TURRET_INTERVAL, lvl)}s 部署一座 · 伤害 ×${atLevel(LVL_TURRET_DAMAGE, lvl).toFixed(1)} · 存在 ${TURRET_LIFETIME}s`,
+    apply: (p, lvl) => {
+      p.turretInterval = atLevel(LVL_TURRET_INTERVAL, lvl);
+      p.turretTimer = atLevel(LVL_TURRET_INTERVAL, lvl);
+      p.turretDamageScale = atLevel(LVL_TURRET_DAMAGE, lvl);
+    },
+  },
+  {
+    id: 'mirror_self',
+    key: 'mirror_self',
+    name: 'Mirror Self',
+    nameZh: '镜像分身',
+    desc: `分出一个与你同频开火的分身，自动跟随走位、自己索敌，最多同时 ${MAX_CLONES} 个。`,
+    category: 'summon',
+    rarity: 'epic',
+    maxLevel: 3,
+    statDiffText: (_p, lvl = 1) =>
+      `每 ${atLevel(LVL_CLONE_INTERVAL, lvl)}s 分出一个分身 · 伤害 ×${atLevel(LVL_CLONE_DAMAGE, lvl).toFixed(1)} · 存在 ${CLONE_LIFETIME}s`,
+    apply: (p, lvl) => {
+      p.cloneInterval = atLevel(LVL_CLONE_INTERVAL, lvl);
+      p.cloneTimer = atLevel(LVL_CLONE_INTERVAL, lvl);
+      p.cloneDamageScale = atLevel(LVL_CLONE_DAMAGE, lvl);
+    },
+  },
+  {
+    id: 'necro_fleet',
+    key: 'necro_fleet',
+    name: 'Necro Fleet',
+    nameZh: '亡者编队',
+    desc: `被你击碎的几何体有几率原地转生，保留生前的体型与咬合力替你作战。`,
+    category: 'summon',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (_p, lvl = 1) =>
+      `${pct(atLevel(LVL_NECRO_CHANCE, lvl))} 击杀转生为友军 · 存活 ${ALLY_LIFETIME}s · 场上最多 ${MAX_ALLIES} 个`,
+    apply: (p, lvl) => {
+      p.necroChance = atLevel(LVL_NECRO_CHANCE, lvl);
     },
   },
 

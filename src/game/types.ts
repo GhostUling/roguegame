@@ -193,6 +193,18 @@ export interface Player {
   comboRatePerTen: number; // fire-rate bonus per 10 combo, 0 = off
   comboCount: number;
   comboTimer: number;
+  turretInterval: number; // seconds between turret deployments, 0 = card not taken
+  turretTimer: number;
+  turretDamageScale: number; // share of the player's shot each turret round carries
+  gridInterval: number; // seconds between grid verdicts, 0 = card not taken
+  gridTimer: number;
+  gridDamageScale: number;
+  gridFlash: number; // seconds the lattice stays lit, drives the renderer
+  cloneInterval: number; // seconds between mirror clones, 0 = card not taken
+  cloneTimer: number;
+  cloneDamageScale: number;
+  orbitShellRadius: number; // orbit radius in px; 0 = straight fire, the default
+  necroChance: number; // chance a kill revives on the player's side, 0 = off
   massRoundScale: number; // px added to the hit radius per 100 damage
   hypercritChance: number;
   hypercritFlash: number; // seconds of white-out left after a ×20 hit
@@ -252,6 +264,7 @@ export interface Enemy {
   chargeDir?: { x: number; y: number };
   attackCooldown?: number;
   frozenTimer?: number; // Cryo slow status
+  stunTimer?: number; // A hard hold: movement goes to zero, unlike the cryo slow
   markedTimer?: number; // Lance Kappa mark: takes +25% damage while it burns down
   burnTimer?: number; // Fusion Iota burn: seconds of damage over time left
   burnDps?: number;
@@ -273,14 +286,17 @@ export interface Projectile {
   maxLife: number;
   hitEnemyIds: Set<number>;
   bouncesRemaining?: number;
-  isClusterSub?: boolean;
-  isRefractionShard?: boolean;
+  /**
+   * This round did not come out of the player's own weapon — a drone missile, a
+   * cluster fragment, a refraction shard, a split round. Every card that spawns
+   * more bullets *on hit* skips secondaries, so no second bullet source can
+   * cascade; without the flag a single spawned round would multiply itself.
+   */
+  isSecondary?: boolean;
   /** Fusion Iota overload shell: every sixth round, detonates far wider. */
   isIotaBomb?: boolean;
   /** Overflow's Delayed Detonation: an armed shell has stopped and counts down. */
   delayedFuse?: number;
-  /** Overflow's Spawnshotter: a split round, which is barred from splitting again. */
-  isSpawnShot?: boolean;
 }
 
 export interface EnemyProjectile {
@@ -378,6 +394,64 @@ export interface Satellite {
   radius: number;
   damage: number;
   rotation: number;
+}
+
+/**
+ * A deployed prism turret: parked where it was dropped, targeting on its own,
+ * and gone when its timer runs out. Overflow's Prism Turret card is its only
+ * source, so a run without that card never allocates one.
+ */
+export interface Turret {
+  id: number;
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  lastFireTime: number;
+  aimAngle: number;
+}
+
+/** A Mirror Self double: holds station on the hull, fires on its own beat. */
+export interface Clone {
+  id: number;
+  x: number;
+  y: number;
+  life: number;
+  maxLife: number;
+  lastFireTime: number;
+  aimAngle: number;
+}
+
+/**
+ * One of Orbit Cage's shells: a round circling the hull that never expires. Its
+ * reach is the player's shot, so there is nothing here but an angle and the
+ * per-enemy re-hit bookkeeping.
+ */
+export interface OrbitShell {
+  id: number;
+  angle: number;
+  /** enemyId → clock ms of the last hit, so one shell cannot shred one enemy. */
+  lastHit: Map<number, number>;
+}
+
+/** A revived enemy fighting on the player's side. */
+export interface Ally {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  sides: number;
+  speed: number;
+  damage: number;
+  fillColor: string;
+  strokeColor: string;
+  rotation: number;
+  rotSpeed: number;
+  life: number;
+  maxLife: number;
+  attackCooldown: number;
 }
 
 export type UpgradeRarity = 'common' | 'rare' | 'epic' | 'legendary';
