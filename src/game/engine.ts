@@ -17,6 +17,10 @@ import {
 } from './types';
 import { sound } from './audio';
 import { getCharacterDef } from './characters';
+import { drawCharacterShip, drawResonanceArc } from './shipRender';
+import { getPilotWeaponStats } from './pilotStats';
+
+const TWIN_WING_DIST = 32; // half of the wing span: ships sit 64px apart
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -192,6 +196,7 @@ export class GameEngine {
       gameMode: isTwin ? 'twin_link' : 'standard',
       twinPilotId: isTwin ? twinPilotId : undefined,
       pilot2LastFireTime: 0,
+      pilot2Angle: 0,
       x: this.width > 0 ? this.width / 2 : 500,
       y: this.height > 0 ? this.height / 2 : 400,
       vx: 0,
@@ -263,14 +268,23 @@ export class GameEngine {
         p2: { x: this.player.x, y: this.player.y },
       };
     }
-    const wingDist = 20; // 20px offset each side (40px wing span)
-    const perpAngle = this.player.angle + Math.PI / 2;
-    const cosP = Math.cos(perpAngle);
-    const sinP = Math.sin(perpAngle);
+    // Side-by-side heavy-battleship silhouette: port wing left, starboard wing right.
     return {
-      p1: { x: this.player.x - cosP * wingDist, y: this.player.y - sinP * wingDist },
-      p2: { x: this.player.x + cosP * wingDist, y: this.player.y + sinP * wingDist },
+      p1: { x: this.player.x - TWIN_WING_DIST, y: this.player.y },
+      p2: { x: this.player.x + TWIN_WING_DIST, y: this.player.y },
     };
+  }
+
+  /** True when the given vessel is flying in the current run (either wing of a twin pair). */
+  private hasPilot(id: CharacterId): boolean {
+    if (this.player.characterId === id) return true;
+    return (
+      this.player.gameMode === 'twin_link' && this.player.twinPilotId === id
+    );
+  }
+
+  private isTwinRun(): boolean {
+    return this.player.gameMode === 'twin_link' && !!this.player.twinPilotId;
   }
 
   public startNewGame(
@@ -564,7 +578,7 @@ export class GameEngine {
       if (this.player.skillActiveTimer <= 0) {
         this.player.isSkillActive = false;
         this.player.skillActiveTimer = 0;
-        if (this.player.characterId === 'epsilon_carrier') {
+        if (this.hasPilot('epsilon_carrier')) {
           while (this.player.drones.length > Math.max(1, this.player.droneCount)) {
             this.player.drones.pop();
           }
@@ -694,7 +708,7 @@ export class GameEngine {
     }
 
     let currentSpeed = this.player.speed;
-    if (this.player.characterId === 'delta_chronos' && this.player.isSkillActive) {
+    if (this.hasPilot('delta_chronos') && this.player.isSkillActive) {
       currentSpeed *= 1.45;
     }
 
@@ -712,9 +726,11 @@ export class GameEngine {
     this.player.x += this.player.vx * (dt * 60);
     this.player.y += this.player.vy * (dt * 60);
 
-    const margin = this.player.radius + 6;
-    this.player.x = Math.max(margin, Math.min(this.width - margin, this.player.x));
-    this.player.y = Math.max(margin, Math.min(this.height - margin, this.player.y));
+    // A twin pair keeps both wings on screen, so it needs extra horizontal margin.
+    const marginY = this.player.radius + 6;
+    const marginX = this.isTwinRun() ? this.player.radius + TWIN_WING_DIST + 6 : marginY;
+    this.player.x = Math.max(marginX, Math.min(this.width - marginX, this.player.x));
+    this.player.y = Math.max(marginY, Math.min(this.height - marginY, this.player.y));
 
     if (this.player.invincibleTimer > 0) {
       this.player.invincibleTimer -= dt;
@@ -723,44 +739,72 @@ export class GameEngine {
 
   private updateAutoShooting() {
     const now = performance.now();
+    const positions = this.getTwinPositions();
 
-    // 1. Extra radial piercing star burst during Gamma Viper Overload Barrage
-    if (this.player.characterId === 'gamma_viper' && this.player.isSkillActive) {
-      if (now - this.lastBarragePulse >= 130) {
-        this.lastBarragePulse = now;
-        const baseA = this.pulseAnimTime * 5;
-        const waveDmg = Math.round(this.player.bulletDamage * 1.4);
-        for (let i = 0; i < 8; i++) {
-          const a = baseA + (i * Math.PI) / 4;
-          this.projectiles.push({
-            id: this.nextProjId++,
-            x: this.player.x,
-            y: this.player.y,
-            vx: Math.cos(a) * 13,
-            vy: Math.sin(a) * 13,
-            damage: waveDmg,
-            pierce: 3,
-            radius: 5,
-            color: '#fbbf24',
-            trail: [],
-            isCrit: true,
-            life: 0,
-            maxLife: 1.5,
-            hitEnemyIds: new Set(),
-            bouncesRemaining: this.player.bouncingBullets || 0,
-          });
-        }
-        sound.playShoot(1.3);
-      }
+    this.updateBarragePulse(0, positions.p1, now);
+    this.firePilotWeapon(0, positions.p1, now);
+
+    if (this.isTwinRun()) {
+      this.updateBarragePulse(1, positions.p2, now);
+      this.firePilotWeapon(1, positions.p2, now);
+    }
+  }
+
+  /**
+   * Effective weapon profile for one wing. Pilot 1 owns the live stats on `player`;
+   * pilot 2 mirrors this run's upgrades as deltas on top of its own chassis base.
+   */
+  private getPilotWeaponStats(index: 0 | 1) {
+    return getPilotWeaponStats(this.player, index);
+  }
+
+  private updateBarragePulse(index: 0 | 1, origin: { x: number; y: number }, now: number) {
+    const stats = this.getPilotWeaponStats(index);
+    if (stats.charId !== 'gamma_viper' || !this.player.isSkillActive) return;
+
+    // A lone gamma owns the pulse clock; a second gamma volleys on the same beat.
+    const isLeadGamma = index === 0 || this.getPilotWeaponStats(0).charId !== 'gamma_viper';
+    if (isLeadGamma) {
+      if (now - this.lastBarragePulse < 130) return;
+      this.lastBarragePulse = now;
     }
 
-    // 2. Standard auto-aim shooting
-    let currentFireRate = this.player.fireRate;
-    if (this.player.characterId === 'gamma_viper' && this.player.isSkillActive) {
-      currentFireRate = Math.max(75, Math.round(this.player.fireRate * 0.25));
+    const baseA = this.pulseAnimTime * 5;
+    const waveDmg = Math.round(stats.bulletDamage * 1.4);
+    for (let i = 0; i < 8; i++) {
+      const a = baseA + (i * Math.PI) / 4;
+      this.projectiles.push({
+        id: this.nextProjId++,
+        x: origin.x,
+        y: origin.y,
+        vx: Math.cos(a) * 13,
+        vy: Math.sin(a) * 13,
+        damage: waveDmg,
+        pierce: 3,
+        radius: 5,
+        color: '#fbbf24',
+        trail: [],
+        isCrit: true,
+        life: 0,
+        maxLife: 1.5,
+        hitEnemyIds: new Set(),
+        bouncesRemaining: this.player.bouncingBullets || 0,
+      });
+    }
+    sound.playShoot(1.3);
+  }
+
+  private firePilotWeapon(index: 0 | 1, origin: { x: number; y: number }, now: number) {
+    const stats = this.getPilotWeaponStats(index);
+
+    let currentFireRate = stats.fireRate;
+    if (stats.charId === 'gamma_viper' && this.player.isSkillActive) {
+      currentFireRate = Math.max(75, Math.round(stats.fireRate * 0.25));
     }
 
-    if (now - this.player.lastFireTime < currentFireRate) return;
+    const lastFireTime =
+      index === 0 ? this.player.lastFireTime : this.player.pilot2LastFireTime || 0;
+    if (now - lastFireTime < currentFireRate) return;
     if (this.enemies.length === 0) return;
 
     let targetEnemy: Enemy | null = null;
@@ -768,8 +812,8 @@ export class GameEngine {
 
     for (let i = 0; i < this.enemies.length; i++) {
       const enemy = this.enemies[i];
-      const dx = enemy.x - this.player.x;
-      const dy = enemy.y - this.player.y;
+      const dx = enemy.x - origin.x;
+      const dy = enemy.y - origin.y;
       const distSq = dx * dx + dy * dy;
       if (distSq < minDistSq) {
         minDistSq = distSq;
@@ -781,43 +825,52 @@ export class GameEngine {
     const maxRangeSq = (Math.max(this.width, this.height) * 1.2) ** 2;
     if (minDistSq > maxRangeSq) return;
 
-    this.player.lastFireTime = now;
-    const baseAngle = Math.atan2(targetEnemy.y - this.player.y, targetEnemy.x - this.player.x);
-    this.player.angle = baseAngle;
+    if (index === 0) {
+      this.player.lastFireTime = now;
+    } else {
+      this.player.pilot2LastFireTime = now;
+    }
 
-    const count = this.player.bulletCount;
+    const baseAngle = Math.atan2(targetEnemy.y - origin.y, targetEnemy.x - origin.x);
+    if (index === 0) {
+      this.player.angle = baseAngle;
+    } else {
+      this.player.pilot2Angle = baseAngle;
+    }
+
+    const count = stats.bulletCount;
     const spreadAngle = 0.16;
     const startAngle = baseAngle - ((count - 1) * spreadAngle) / 2;
 
     const isGuaranteedCrit =
-      (this.player.characterId === 'delta_chronos' && this.player.isSkillActive) ||
-      (this.player.characterId === 'zeta_aurora' && this.player.isSkillActive);
+      (stats.charId === 'delta_chronos' && this.player.isSkillActive) ||
+      (stats.charId === 'zeta_aurora' && this.player.isSkillActive);
 
-    let effectiveCritChance = this.player.critChance;
-    if (this.player.characterId === 'gamma_viper') {
+    let effectiveCritChance = stats.critChance;
+    if (stats.charId === 'gamma_viper') {
       const currentMoveSpd = Math.hypot(this.player.vx, this.player.vy);
       const ratio = Math.min(1.0, currentMoveSpd / Math.max(1, this.player.speed));
-      effectiveCritChance = Math.min(0.85, this.player.critChance + ratio * 0.28);
+      effectiveCritChance = Math.min(0.85, stats.critChance + ratio * 0.28);
     }
+
+    const bulletColor = index === 0 ? '#00ffcc' : getCharacterDef(stats.charId).color;
 
     for (let i = 0; i < count; i++) {
       const angle = startAngle + i * spreadAngle;
       const isCrit = isGuaranteedCrit || Math.random() < effectiveCritChance;
 
-      const dmg = Math.round(
-        this.player.bulletDamage * (isCrit ? this.player.critMultiplier : 1)
-      );
+      const dmg = Math.round(stats.bulletDamage * (isCrit ? stats.critMultiplier : 1));
 
       this.projectiles.push({
         id: this.nextProjId++,
-        x: this.player.x,
-        y: this.player.y,
+        x: origin.x,
+        y: origin.y,
         vx: Math.cos(angle) * this.player.bulletSpeed,
         vy: Math.sin(angle) * this.player.bulletSpeed,
         damage: dmg,
-        pierce: this.player.bulletPierce,
+        pierce: stats.bulletPierce,
         radius: isCrit ? 5.5 : 4.5,
-        color: isCrit ? '#ffee33' : '#00ffcc',
+        color: isCrit ? '#ffee33' : bulletColor,
         trail: [],
         isCrit,
         life: 0,
@@ -894,7 +947,7 @@ export class GameEngine {
       const droneY = this.player.y + Math.sin(drone.angle) * drone.dist;
 
       const carrierMult =
-        this.player.characterId === 'epsilon_carrier'
+        this.hasPilot('epsilon_carrier')
           ? this.player.isSkillActive
             ? 1.8
             : 1.35
@@ -902,7 +955,7 @@ export class GameEngine {
 
       if (drone.type === 'interceptor') {
         let fireInterval = this.player.droneOverclock ? 340 : 460;
-        if (this.player.characterId === 'epsilon_carrier') {
+        if (this.hasPilot('epsilon_carrier')) {
           fireInterval = Math.round(fireInterval * (this.player.isSkillActive ? 0.45 : 0.7));
         }
 
@@ -933,7 +986,7 @@ export class GameEngine {
               damage: droneDmg,
               pierce: 1,
               radius: 3.5,
-              color: this.player.characterId === 'epsilon_carrier' ? '#10b981' : '#38bdf8',
+              color: this.hasPilot('epsilon_carrier') ? '#10b981' : '#38bdf8',
               trail: [],
               isCrit: false,
               life: 0,
@@ -976,7 +1029,7 @@ export class GameEngine {
         // Defensive perimeter drone, pulses gently
       } else if (drone.type === 'railgun') {
         let fireInterval = this.player.droneOverclock ? 2500 : 3400;
-        if (this.player.characterId === 'epsilon_carrier') {
+        if (this.hasPilot('epsilon_carrier')) {
           fireInterval = Math.round(fireInterval * (this.player.isSkillActive ? 0.5 : 0.75));
         }
 
@@ -1003,7 +1056,7 @@ export class GameEngine {
             damage: railDmg,
             pierce: 5,
             radius: 6,
-            color: this.player.characterId === 'epsilon_carrier' ? '#f59e0b' : '#a855f7',
+            color: this.hasPilot('epsilon_carrier') ? '#f59e0b' : '#a855f7',
             trail: [],
             isCrit: true,
             life: 0,
@@ -1301,7 +1354,7 @@ export class GameEngine {
 
             // Refraction Matrix Passive (Alpha Prism): 40% chance on hit to refract 2 secondary shards
             if (
-              this.player.characterId === 'alpha_prism' &&
+              this.hasPilot('alpha_prism') &&
               !p.isRefractionShard &&
               this.projectiles.length < 115 &&
               Math.random() < 0.4
@@ -1333,7 +1386,7 @@ export class GameEngine {
             }
 
             // Epsilon Carrier Passive: Drone/shard hits occasionally trigger nanite self-repair
-            if (this.player.characterId === 'epsilon_carrier' && Math.random() < 0.2) {
+            if (this.hasPilot('epsilon_carrier') && Math.random() < 0.2) {
               const heal = 2;
               this.player.hp = Math.min(this.player.maxHp, this.player.hp + heal);
             }
@@ -1417,6 +1470,8 @@ export class GameEngine {
   }
 
   private updateEnemyProjectiles(dt: number) {
+    const wings = this.getTwinPositions();
+
     for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
       const ep = this.enemyProjectiles[i];
       ep.x += ep.vx * (dt * 60);
@@ -1440,12 +1495,27 @@ export class GameEngine {
         }
       }
 
-      // Player collision
-      const pdx = this.player.x - ep.x;
-      const pdy = this.player.y - ep.y;
-      const hitRadius = this.player.radius + ep.radius;
+      // Player collision — either wing can be struck
+      let winged = false;
+      let contactX = 0;
+      let contactY = 0;
+      if (!despawn) {
+        const hitRadius = this.player.radius + ep.radius;
+        const hitSq = hitRadius * hitRadius;
+        const d1 = (wings.p1.x - ep.x) ** 2 + (wings.p1.y - ep.y) ** 2;
+        const d2 = (wings.p2.x - ep.x) ** 2 + (wings.p2.y - ep.y) ** 2;
+        if (d1 < hitSq) {
+          winged = true;
+          contactX = wings.p1.x;
+          contactY = wings.p1.y;
+        } else if (this.isTwinRun() && d2 < hitSq) {
+          winged = true;
+          contactX = wings.p2.x;
+          contactY = wings.p2.y;
+        }
+      }
 
-      if (!despawn && pdx * pdx + pdy * pdy < hitRadius * hitRadius) {
+      if (winged) {
         despawn = true;
 
         if (this.player.naniteShieldActive) {
@@ -1455,8 +1525,8 @@ export class GameEngine {
           this.player.timeSinceLastDamage = 0;
           this.shockwaves.push({
             id: Math.random(),
-            x: this.player.x,
-            y: this.player.y,
+            x: contactX,
+            y: contactY,
             radius: 12,
             maxRadius: 80,
             color: '#38bdf8',
@@ -1473,7 +1543,7 @@ export class GameEngine {
           sound.playPlayerHit();
 
           if (this.floatingTexts.length < 20) {
-            this.addFloatingText(this.player.x, this.player.y - 15, `-${ep.damage}`, '#ff2255', true);
+            this.addFloatingText(contactX, contactY - 15, `-${ep.damage}`, '#ff2255', true);
           }
 
           // Retaliation thorns trigger
@@ -1528,7 +1598,10 @@ export class GameEngine {
     this.nextWaveTimer += dt;
     const spawnInterval = Math.max(0.2, 1.2 - (this.gameTime / 180) * 0.85);
 
-    if (this.enemies.length >= 95) return;
+    // Twin Link doubles the swarm to match the doubled player firepower.
+    const twin = this.isTwinRun();
+    const maxAlive = twin ? 150 : 95;
+    if (this.enemies.length >= maxAlive) return;
 
     if (this.nextWaveTimer >= spawnInterval) {
       this.nextWaveTimer = 0;
@@ -1557,6 +1630,7 @@ export class GameEngine {
       }
 
       this.spawnEnemy(type);
+      if (twin) this.spawnEnemy(type);
     }
   }
 
@@ -1700,7 +1774,9 @@ export class GameEngine {
   }
 
   private updateEnemies(dt: number) {
-    const isSlowedBySkill = this.player.characterId === 'delta_chronos' && this.player.isSkillActive;
+    const isSlowedBySkill = this.hasPilot('delta_chronos') && this.player.isSkillActive;
+    const isTwin = this.isTwinRun();
+    const wings = this.getTwinPositions();
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const e = this.enemies[i];
@@ -1721,8 +1797,16 @@ export class GameEngine {
         continue;
       }
 
-      const pdx = this.player.x - e.x;
-      const pdy = this.player.y - e.y;
+      // Enemies pursue whichever wing is nearer, so a twin pair splits the swarm.
+      const d1x = wings.p1.x - e.x;
+      const d1y = wings.p1.y - e.y;
+      const d1Sq = d1x * d1x + d1y * d1y;
+      const d2x = wings.p2.x - e.x;
+      const d2y = wings.p2.y - e.y;
+      const d2Sq = isTwin ? d2x * d2x + d2y * d2y : Infinity;
+      const chasesSecondWing = d2Sq < d1Sq;
+      const pdx = chasesSecondWing ? d2x : d1x;
+      const pdy = chasesSecondWing ? d2y : d1y;
       const pDist = Math.hypot(pdx, pdy);
 
       // ==========================================
@@ -1883,9 +1967,12 @@ export class GameEngine {
       e.y += e.vy * (dt * 60);
       e.rotation += e.rotSpeed * dt * currentSlow;
 
-      // Player melee collision
+      // Player melee collision — either wing counts as a contact
       const hitRadius = this.player.radius + e.radius;
-      if (pDist < hitRadius) {
+      const hitSq = hitRadius * hitRadius;
+      const wingContact =
+        d1Sq < hitSq || (isTwin && d2Sq < hitSq);
+      if (wingContact) {
         if (this.player.naniteShieldActive) {
           this.player.naniteShieldActive = false;
           this.player.naniteShieldTimer = 0;
@@ -1907,7 +1994,7 @@ export class GameEngine {
           if (this.player.droneShield) {
             incomingDmg = Math.max(1, Math.round(incomingDmg * 0.85));
           }
-          if (this.player.characterId === 'beta_phalanx') {
+          if (this.hasPilot('beta_phalanx')) {
             incomingDmg = Math.round(incomingDmg * 0.8);
             const bounceAngle = Math.atan2(e.y - this.player.y, e.x - this.player.x);
             e.x += Math.cos(bounceAngle) * 25;
@@ -1978,7 +2065,7 @@ export class GameEngine {
     }
 
     // Zeta Aurora Passive: Shattering frozen enemies triggers cryo frost explosion
-    if (this.player.characterId === 'zeta_aurora' && e.frozenTimer && e.frozenTimer > 0) {
+    if (this.hasPilot('zeta_aurora') && e.frozenTimer && e.frozenTimer > 0) {
       const shatterDmg = Math.round(this.player.bulletDamage * 1.4);
       if (this.shockwaves.length < 5) {
         this.shockwaves.push({
@@ -2009,7 +2096,7 @@ export class GameEngine {
     }
 
     // Epsilon Carrier Passive: 40% chance on kill to drop +2 HP nanite heal
-    if (this.player.characterId === 'epsilon_carrier' && Math.random() < 0.4) {
+    if (this.hasPilot('epsilon_carrier') && Math.random() < 0.4) {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + 2);
       if (this.floatingTexts.length < 20) {
         this.addFloatingText(this.player.x, this.player.y - 14, '+2 HP', '#10b981', false);
@@ -2048,14 +2135,24 @@ export class GameEngine {
     }
 
     const magnetSq = this.player.magnetRadius * this.player.magnetRadius;
+    const isTwin = this.isTwinRun();
+    const wings = this.getTwinPositions();
 
     for (let i = this.gems.length - 1; i >= 0; i--) {
       const g = this.gems[i];
       g.rotation += g.rotSpeed * dt;
 
-      const dx = this.player.x - g.x;
-      const dy = this.player.y - g.y;
-      const distSq = dx * dx + dy * dy;
+      // Gems stream toward the nearer wing and can be banked by either one.
+      const e1x = wings.p1.x - g.x;
+      const e1y = wings.p1.y - g.y;
+      const e1Sq = e1x * e1x + e1y * e1y;
+      const e2x = wings.p2.x - g.x;
+      const e2y = wings.p2.y - g.y;
+      const e2Sq = isTwin ? e2x * e2x + e2y * e2y : Infinity;
+      const towardSecond = e2Sq < e1Sq;
+      const dx = towardSecond ? e2x : e1x;
+      const dy = towardSecond ? e2y : e1y;
+      const distSq = towardSecond ? e2Sq : e1Sq;
 
       if (distSq < magnetSq || g.attracted) {
         g.attracted = true;
@@ -2068,7 +2165,9 @@ export class GameEngine {
         g.y += g.vy * (dt * 60);
 
         const pickupDist = this.player.radius + g.radius + 6;
-        if (distSq < pickupDist * pickupDist) {
+        const pickupSq = pickupDist * pickupDist;
+        const otherWingSq = towardSecond ? e1Sq : e2Sq;
+        if (distSq < pickupSq || (isTwin && otherWingSq < pickupSq)) {
           this.gems.splice(i, 1);
           this.collectGem(g);
         }
@@ -2085,7 +2184,7 @@ export class GameEngine {
     this.player.xp += gem.value;
     sound.playExp(Math.min(20, this.player.xp % 10));
 
-    if (this.player.characterId === 'delta_chronos' && this.player.skillCooldown > 0) {
+    if (this.hasPilot('delta_chronos') && this.player.skillCooldown > 0) {
       this.player.skillCooldown = Math.max(0, this.player.skillCooldown - 0.15);
     }
 
@@ -2302,7 +2401,7 @@ export class GameEngine {
     ctx.fillRect(0, 0, this.width, this.height);
 
     const gridSize = 48;
-    if (this.player.characterId === 'delta_chronos' && this.player.isSkillActive) {
+    if (this.hasPilot('delta_chronos') && this.player.isSkillActive) {
       ctx.strokeStyle = 'rgba(6, 182, 212, 0.12)';
     } else {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
@@ -2773,260 +2872,55 @@ export class GameEngine {
       ctx.restore();
     }
 
-    const charId = this.player.characterId;
+    const twinId = this.isTwinRun() ? this.player.twinPilotId : undefined;
+    const wings = this.getTwinPositions();
+    const offX = wings.p1.x - this.player.x;
+    const offY = wings.p1.y - this.player.y;
 
-    if (charId === 'alpha_prism') {
+    ctx.save();
+    ctx.translate(offX, offY);
+    drawCharacterShip(
+      ctx,
+      this.player.characterId,
+      this.player.radius,
+      this.player.angle,
+      this.pulseAnimTime
+    );
+    ctx.restore();
+
+    if (twinId) {
       ctx.save();
-      ctx.rotate(this.pulseAnimTime * 1.2);
-      ctx.strokeStyle = '#00ffcc';
-      ctx.shadowColor = '#00ffcc';
-      ctx.shadowBlur = 18;
-      ctx.lineWidth = 2.5;
-
-      ctx.beginPath();
-      const points = 8;
-      const outerR = this.player.radius * 1.35;
-      const innerR = this.player.radius * 0.95;
-      for (let i = 0; i < points * 2; i++) {
-        const r = i % 2 === 0 ? outerR : innerR;
-        const a = (i * Math.PI) / points;
-        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      }
-      ctx.closePath();
-      ctx.stroke();
+      ctx.translate(-offX, -offY);
+      drawCharacterShip(
+        ctx,
+        twinId,
+        this.player.radius,
+        this.player.pilot2Angle || 0,
+        this.pulseAnimTime
+      );
       ctx.restore();
 
-      ctx.fillStyle = '#0a1922';
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#00ffcc';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.45, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (charId === 'beta_phalanx') {
-      ctx.save();
-      ctx.rotate(this.pulseAnimTime * 0.7);
-      ctx.strokeStyle = '#a855f7';
-      ctx.shadowColor = '#a855f7';
-      ctx.shadowBlur = 18;
-      ctx.lineWidth = 3.5;
-
-      ctx.beginPath();
-      for (let s = 0; s < 6; s++) {
-        const a = (s * 2 * Math.PI) / 6;
-        const px = Math.cos(a) * (this.player.radius * 1.35);
-        const py = Math.sin(a) * (this.player.radius * 1.35);
-        if (s === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.fillStyle = '#170624';
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#38bdf8';
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#38bdf8';
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.5, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (charId === 'gamma_viper') {
-      ctx.save();
-      ctx.rotate(this.player.angle);
-      ctx.fillStyle = '#1e1402';
-      ctx.strokeStyle = '#fbbf24';
-      ctx.shadowColor = '#fbbf24';
-      ctx.shadowBlur = 18;
-      ctx.lineWidth = 2.5;
-
-      ctx.beginPath();
-      ctx.moveTo(this.player.radius * 1.5, 0);
-      ctx.lineTo(-this.player.radius * 1.1, -this.player.radius * 1.2);
-      ctx.lineTo(-this.player.radius * 0.5, 0);
-      ctx.lineTo(-this.player.radius * 1.1, this.player.radius * 1.2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.arc(-this.player.radius * 0.9, -5, 3.5, 0, Math.PI * 2);
-      ctx.arc(-this.player.radius * 0.9, 5, 3.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore();
-    } else if (charId === 'delta_chronos') {
-      ctx.save();
-      ctx.rotate(this.pulseAnimTime * 1.4);
-      ctx.strokeStyle = '#06b6d4';
-      ctx.shadowColor = '#06b6d4';
-      ctx.shadowBlur = 16;
-      ctx.lineWidth = 2;
-
-      ctx.beginPath();
-      const points = 12;
-      for (let i = 0; i < points * 2; i++) {
-        const r = i % 2 === 0 ? this.player.radius * 1.4 : this.player.radius * 0.85;
-        const a = (i * Math.PI) / points;
-        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.save();
-      ctx.rotate(-this.pulseAnimTime * 1.8);
-      ctx.strokeStyle = '#ec4899';
-      ctx.shadowColor = '#ec4899';
-      ctx.shadowBlur = 14;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.75, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(0, 0, 5, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (charId === 'epsilon_carrier') {
-      // 10-point nested decagram motherhive
-      ctx.save();
-      ctx.rotate(this.pulseAnimTime * 0.9);
-      ctx.strokeStyle = '#10b981';
-      ctx.shadowColor = '#10b981';
-      ctx.shadowBlur = 18;
-      ctx.lineWidth = 2.8;
-
-      ctx.beginPath();
-      const points = 10;
-      for (let i = 0; i < points * 2; i++) {
-        const r = i % 2 === 0 ? this.player.radius * 1.4 : this.player.radius * 0.9;
-        const a = (i * Math.PI) / points;
-        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
-
-      // Dual rotating docking satellites
-      ctx.save();
-      ctx.rotate(-this.pulseAnimTime * 1.6);
-      ctx.strokeStyle = '#f59e0b';
-      ctx.shadowColor = '#f59e0b';
-      ctx.shadowBlur = 12;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.7, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.fillStyle = '#f59e0b';
-      [-this.player.radius * 0.7, this.player.radius * 0.7].forEach((xPos) => {
-        ctx.beginPath();
-        ctx.arc(xPos, 0, 3, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.restore();
-
-      ctx.fillStyle = '#022c22';
-      ctx.strokeStyle = '#34d399';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.45, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(0, 0, 4, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (charId === 'zeta_aurora') {
-      // 6-point crystalline snowflake geometry
-      ctx.save();
-      ctx.rotate(this.pulseAnimTime * 1.3);
-      ctx.strokeStyle = '#00f0ff';
-      ctx.shadowColor = '#00f0ff';
-      ctx.shadowBlur = 18;
-      ctx.lineWidth = 2.5;
-
-      ctx.beginPath();
-      for (let s = 0; s < 6; s++) {
-        const a = (s * Math.PI * 2) / 6;
-        const ox = Math.cos(a) * (this.player.radius * 1.45);
-        const oy = Math.sin(a) * (this.player.radius * 1.45);
-        ctx.moveTo(0, 0);
-        ctx.lineTo(ox, oy);
-
-        // Branch spikes
-        const bx = Math.cos(a) * (this.player.radius * 0.85);
-        const by = Math.sin(a) * (this.player.radius * 0.85);
-        const pa1 = a + Math.PI / 3;
-        const pa2 = a - Math.PI / 3;
-        ctx.moveTo(bx, by);
-        ctx.lineTo(bx + Math.cos(pa1) * 6, by + Math.sin(pa1) * 6);
-        ctx.moveTo(bx, by);
-        ctx.lineTo(bx + Math.cos(pa2) * 6, by + Math.sin(pa2) * 6);
-      }
-      ctx.stroke();
-      ctx.restore();
-
-      // Outer cyan-magenta dual frost halo
-      ctx.save();
-      ctx.rotate(-this.pulseAnimTime * 2.0);
-      ctx.strokeStyle = '#e879f9';
-      ctx.shadowColor = '#e879f9';
-      ctx.shadowBlur = 14;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.65, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
-      ctx.fillStyle = '#083344';
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.player.radius * 0.45, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(0, 0, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    if (charId !== 'gamma_viper') {
-      ctx.save();
-      ctx.rotate(this.player.angle);
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.moveTo(this.player.radius * 1.45, 0);
-      ctx.lineTo(this.player.radius * 0.7, -4);
-      ctx.lineTo(this.player.radius * 0.7, 4);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      this.renderTwinArc(ctx, wings.p1, wings.p2);
     }
 
     ctx.restore();
+  }
+
+  /** Crackling resonance tether that links the two wings of a Twin Link pair. */
+  private renderTwinArc(
+    ctx: CanvasRenderingContext2D,
+    a: { x: number; y: number },
+    b: { x: number; y: number }
+  ) {
+    drawResonanceArc(
+      ctx,
+      a.x - this.player.x,
+      a.y - this.player.y,
+      b.x - this.player.x,
+      b.y - this.player.y,
+      this.pulseAnimTime,
+      this.player.radius * 1.05
+    );
   }
 
   private renderParticles(ctx: CanvasRenderingContext2D) {

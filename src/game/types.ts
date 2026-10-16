@@ -81,6 +81,7 @@ export interface Player {
   gameMode?: GameMode;
   twinPilotId?: CharacterId; // 2nd pilot if twin_link mode
   pilot2LastFireTime?: number;
+  pilot2Angle?: number; // 2nd pilot's facing/aim direction
   x: number;
   y: number;
   vx: number;

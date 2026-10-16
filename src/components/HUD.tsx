@@ -1,7 +1,8 @@
 import React from 'react';
 import { Player } from '../game/types';
 import { getCharacterDef } from '../game/characters';
-import { Volume2, VolumeX, Pause, Skull, Clock, Zap, Shield, Sparkles } from 'lucide-react';
+import { getPilotWeaponStats } from '../game/pilotStats';
+import { Volume2, VolumeX, Pause, Skull, Clock, Zap, Shield, Sparkles, Users } from 'lucide-react';
 
 interface HUDProps {
   player: Player;
@@ -23,6 +24,10 @@ export const HUD: React.FC<HUDProps> = ({
   onTriggerSkill,
 }) => {
   const char = getCharacterDef(player.characterId);
+
+  const twinId = player.gameMode === 'twin_link' ? player.twinPilotId : undefined;
+  const twinDef = twinId ? getCharacterDef(twinId) : null;
+  const twinStats = twinId ? getPilotWeaponStats(player, 1) : null;
 
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
@@ -48,6 +53,16 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="glass-panel px-3 py-1 rounded-md text-xs font-bold text-cyan-300 font-mono-numbers shrink-0 border border-cyan-500/30">
             LV.{player.level}
           </div>
+
+          {twinDef && (
+            <div className="glass-panel px-2.5 py-1 rounded-md text-[11px] font-bold font-mono-numbers shrink-0 border border-fuchsia-500/40 flex items-center gap-1.5">
+              <Users size={12} className="text-fuchsia-300" />
+              <span className="text-fuchsia-300">双子共鸣</span>
+              <span style={{ color: char.color }}>{char.nameZh}</span>
+              <span className="text-slate-500">+</span>
+              <span style={{ color: twinDef.color }}>{twinDef.nameZh}</span>
+            </div>
+          )}
 
           <div className="relative flex-1 h-3.5 bg-slate-900/90 rounded-full overflow-hidden border border-slate-700/60 shadow-inner">
             <div
@@ -85,6 +100,11 @@ export const HUD: React.FC<HUDProps> = ({
             <div className="flex items-center justify-between text-xs font-mono-numbers">
               <span className="flex items-center gap-1 text-rose-400 font-medium">
                 <Shield size={13} /> HP
+                {twinDef && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-fuchsia-300 bg-fuchsia-950/70 border border-fuchsia-500/40">
+                    双机共享
+                  </span>
+                )}
                 {player.hp < player.maxHp ? (
                   (player.timeSinceLastDamage || 0) >= 3.0 ? (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/40 animate-pulse">
@@ -142,8 +162,20 @@ export const HUD: React.FC<HUDProps> = ({
       {/* Bottom Area: Weapon Stats & Active Skill Trigger */}
       <div className="flex items-end justify-between w-full max-w-4xl mx-auto gap-4">
         {/* Active Weapon Passives */}
-        <div className="glass-panel px-3 py-2 rounded-lg border border-slate-800/80 flex items-center gap-3 font-mono-numbers text-xs text-slate-400">
-          <div className="flex items-center gap-1 text-slate-300">
+        <div className="glass-panel px-3 py-2 rounded-lg border border-slate-800/80 flex items-center gap-3 font-mono-numbers text-xs text-slate-400 flex-wrap">
+          {twinStats && (
+            <>
+              <div className="flex items-center gap-1 font-semibold" style={{ color: twinDef!.color }}>
+                <span>{twinDef!.nameZh.slice(0, 1)}·副炮</span>
+                <span className="text-slate-400 font-normal">
+                  间隔 {twinStats.fireRate}ms · 伤害 {twinStats.bulletDamage} · 弹道 {twinStats.bulletCount}
+                </span>
+              </div>
+              <span className="text-slate-700">|</span>
+            </>
+          )}
+          <div className="flex items-center gap-1 text-slate-300 font-semibold">
+            {twinStats && <span>{char.nameZh.slice(0, 1)}·主炮</span>}
             <Zap size={13} className="text-amber-400" />
             <span>间隔: {Math.round(player.fireRate)}ms</span>
           </div>
@@ -235,9 +267,15 @@ export const HUD: React.FC<HUDProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-white tracking-tight">
                   {char.activeSkill.nameZh}
+                  {twinDef && (
+                    <span className="text-slate-400 font-normal">
+                      {' + '}
+                      <span style={{ color: twinDef.color }}>{twinDef.activeSkill.nameZh}</span>
+                    </span>
+                  )}
                 </span>
                 <span className="text-[10px] font-mono-numbers px-1 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  SPACE
+                  {twinDef ? '齐发' : 'SPACE'}
                 </span>
               </div>
               <div className="text-[11px] font-mono-numbers">

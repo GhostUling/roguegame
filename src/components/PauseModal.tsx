@@ -49,19 +49,20 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   const [activeTab, setActiveTab] = useState<'upgrades' | 'stats'>('upgrades');
 
   const charDef = getCharacterDef(player.characterId);
+  const twinDef =
+    player.gameMode === 'twin_link' && player.twinPilotId
+      ? getCharacterDef(player.twinPilotId)
+      : null;
   const currentUpgrades = player.upgradeLevels || upgradeLevels || {};
   const upgradeEntries = Object.entries(currentUpgrades).filter(([, lvl]) => lvl > 0);
 
   // Calculate detailed drone values
-  const carrierMult =
-    player.characterId === 'epsilon_carrier'
-      ? player.isSkillActive
-        ? 1.8
-        : 1.35
-      : 1.0;
+  const hasCarrier =
+    player.characterId === 'epsilon_carrier' || twinDef?.id === 'epsilon_carrier';
+  const carrierMult = hasCarrier ? (player.isSkillActive ? 1.8 : 1.35) : 1.0;
 
   let baseDroneInterval = player.droneOverclock ? 340 : 460;
-  if (player.characterId === 'epsilon_carrier') {
+  if (hasCarrier) {
     baseDroneInterval = Math.round(baseDroneInterval * (player.isSkillActive ? 0.45 : 0.7));
   }
   const droneAttacksPerSec = (1000 / baseDroneInterval).toFixed(1);
@@ -161,6 +162,17 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                 </span>
                 <span className="text-slate-600">/</span>
                 <span className="text-sm font-bold text-white">{charDef.nameZh}</span>
+                {twinDef && (
+                  <>
+                    <span className="text-slate-500">+</span>
+                    <span className="text-sm font-bold" style={{ color: twinDef.color }}>
+                      {twinDef.nameZh}
+                    </span>
+                    <span className="text-[10px] font-mono text-fuchsia-300 px-1.5 py-0.5 rounded bg-fuchsia-950/60 border border-fuchsia-800/40">
+                      双子共鸣
+                    </span>
+                  </>
+                )}
                 <span className="text-xs font-mono text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/40">
                   LV.{player.level}
                 </span>

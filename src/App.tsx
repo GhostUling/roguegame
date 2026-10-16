@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/engine';
 import { sound } from './game/audio';
-import { Player, UpgradeOption, GameStats, CharacterId } from './game/types';
+import { Player, UpgradeOption, GameStats, CharacterId, GameMode } from './game/types';
 import { getRandomUpgrades } from './game/upgrades';
 import { VirtualJoystick } from './game/joystick';
 import { HUD } from './components/HUD';
@@ -28,6 +28,8 @@ export default function App() {
     'title' | 'character_select' | 'playing' | 'paused' | 'levelup' | 'gameover'
   >('title');
   const [selectedCharacterId, setSelectedCharacterId] = useState<CharacterId>('alpha_prism');
+  const [gameMode, setGameMode] = useState<GameMode>('standard');
+  const [twinPilotId, setTwinPilotId] = useState<CharacterId | null>(null);
   const [playerState, setPlayerState] = useState<Player | null>(null);
   const [gameTime, setGameTime] = useState<number>(0);
   const [bossWarning, setBossWarning] = useState<boolean>(false);
@@ -168,23 +170,31 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [gameState, isCodexOpen, handleOpenCodex, pauseGame, resumeGame]);
 
-  const startGameWithChar = useCallback((charId: CharacterId) => {
-    setSelectedCharacterId(charId);
-    const initialUpgrades: Record<string, number> =
-      charId === 'epsilon_carrier' ? { summon_drone: 1 } : {};
-    upgradeLevelsRef.current = initialUpgrades;
-    setUpgradeLevels(initialUpgrades);
-    setEndStats(null);
-    setGameState('playing');
-    if (engineRef.current) {
-      engineRef.current.startNewGame(charId);
-      engineRef.current.player.upgradeLevels = { ...initialUpgrades };
-      if (charId === 'epsilon_carrier') {
-        engineRef.current.player.activeSlots = ['summon_drone'];
+  const startGameWithChar = useCallback(
+    (charId: CharacterId, twinId?: CharacterId) => {
+      const mode: GameMode = twinId ? 'twin_link' : 'standard';
+      const carrierPilots = [charId, twinId].filter((c) => c === 'epsilon_carrier').length;
+      const initialUpgrades: Record<string, number> =
+        carrierPilots > 0 ? { summon_drone: carrierPilots } : {};
+
+      setSelectedCharacterId(charId);
+      setGameMode(mode);
+      setTwinPilotId(twinId || null);
+      upgradeLevelsRef.current = initialUpgrades;
+      setUpgradeLevels(initialUpgrades);
+      setEndStats(null);
+      setGameState('playing');
+      if (engineRef.current) {
+        engineRef.current.startNewGame(charId, mode, twinId);
+        engineRef.current.player.upgradeLevels = { ...initialUpgrades };
+        if (carrierPilots > 0) {
+          engineRef.current.player.activeSlots = ['summon_drone'];
+        }
+        setPlayerState(engineRef.current.player);
       }
-      setPlayerState(engineRef.current.player);
-    }
-  }, []);
+    },
+    []
+  );
 
   const toggleMute = useCallback(() => {
     const muted = sound.toggleMute();
@@ -271,7 +281,10 @@ export default function App() {
           highScore={highScore}
           isMuted={isMuted}
           onToggleMute={toggleMute}
-          onStart={() => setGameState('character_select')}
+          onStart={(mode) => {
+            setGameMode(mode);
+            setGameState('character_select');
+          }}
           onOpenCodex={() => handleOpenCodex()}
         />
       )}
@@ -279,7 +292,8 @@ export default function App() {
       {/* Character Select Screen */}
       {gameState === 'character_select' && (
         <CharacterSelectScreen
-          onSelectCharacter={(charId) => startGameWithChar(charId)}
+          mode={gameMode}
+          onSelectCharacter={(charId, twinId) => startGameWithChar(charId, twinId)}
           onBack={() => setGameState('title')}
         />
       )}
@@ -304,7 +318,7 @@ export default function App() {
           isMuted={isMuted}
           onToggleMute={toggleMute}
           onResume={resumeGame}
-          onRestart={() => startGameWithChar(selectedCharacterId)}
+          onRestart={() => startGameWithChar(selectedCharacterId, twinPilotId || undefined)}
           onHome={() => setGameState('character_select')}
           onOpenCodex={(k) => handleOpenCodex(k)}
         />
@@ -315,7 +329,7 @@ export default function App() {
         <GameOverModal
           stats={endStats}
           highScore={highScore}
-          onRestart={() => startGameWithChar(selectedCharacterId)}
+          onRestart={() => startGameWithChar(selectedCharacterId, twinPilotId || undefined)}
           onHome={() => setGameState('character_select')}
           onOpenCodex={() => handleOpenCodex()}
         />

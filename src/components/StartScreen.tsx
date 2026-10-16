@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { sound } from '../game/audio';
-import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark } from 'lucide-react';
+import { GameMode } from '../game/types';
+import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users } from 'lucide-react';
 
 interface StartScreenProps {
   highScore: number;
   isMuted: boolean;
   onToggleMute: () => void;
-  onStart: () => void;
+  onStart: (mode: GameMode) => void;
   onOpenCodex: () => void;
 }
 
@@ -17,11 +18,13 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onStart,
   onOpenCodex,
 }) => {
+  const [mode, setMode] = useState<GameMode>('standard');
+
   const handleStart = () => {
     sound.init();
     sound.resume();
     sound.playUpgrade();
-    onStart();
+    onStart(mode);
   };
 
   const handleOpenCodex = () => {
@@ -29,6 +32,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
     sound.resume();
     sound.playUpgrade();
     onOpenCodex();
+  };
+
+  const handlePickMode = (next: GameMode) => {
+    sound.playClick(next === 'twin_link');
+    setMode(next);
   };
 
   return (
@@ -71,6 +79,50 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             <span>历史最高战绩: {highScore.toLocaleString()} 分</span>
           </div>
         )}
+
+        {/* Mode Selector */}
+        <div className="w-full space-y-2">
+          <div className="text-[11px] font-mono-numbers uppercase tracking-widest text-slate-500 text-left">
+            作战模式 // BATTLE MODE
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <button
+              onClick={() => handlePickMode('standard')}
+              className={`p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col gap-1.5 ${
+                mode === 'standard'
+                  ? 'bg-slate-900/90 border-cyan-400 shadow-[0_0_22px_rgba(0,255,204,0.22)]'
+                  : 'bg-slate-950/60 border-slate-800 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+                <Crosshair size={14} />
+                <span>标准出击</span>
+                <span className="text-[10px] font-mono-numbers text-slate-500">SOLO</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                单机体独立作战，原有节奏与难度，标准肉鸽体验。
+              </p>
+            </button>
+
+            <button
+              onClick={() => handlePickMode('twin_link')}
+              className={`p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer flex flex-col gap-1.5 ${
+                mode === 'twin_link'
+                  ? 'bg-slate-900/90 border-fuchsia-400 shadow-[0_0_22px_rgba(232,121,249,0.22)]'
+                  : 'bg-slate-950/60 border-slate-800 hover:border-slate-600'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 text-xs font-bold text-fuchsia-300">
+                <Users size={14} />
+                <span>双子共鸣</span>
+                <span className="text-[10px] font-mono-numbers text-slate-500">TWIN LINK</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                双机同频编队，共用血条与强化，火力翻倍、怪潮也翻倍。
+              </p>
+            </button>
+          </div>
+        </div>
 
         {/* Core Mechanics Preview */}
         <div className="grid grid-cols-3 gap-2.5 w-full text-left">
@@ -125,7 +177,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             className="flex-1 py-4 px-6 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 text-slate-950 font-black text-base sm:text-lg tracking-wider transition-all duration-200 transform hover:scale-[1.01] shadow-[0_0_35px_rgba(0,255,204,0.4)] flex items-center justify-center gap-2.5 cursor-pointer"
           >
             <Play size={20} className="fill-slate-950" />
-            <span>开始超载启动 (START)</span>
+            <span>
+              {mode === 'twin_link'
+                ? '开始超载启动 (双机编队 SELECT ×2)'
+                : '开始超载启动 (START)'}
+            </span>
           </button>
 
           <button

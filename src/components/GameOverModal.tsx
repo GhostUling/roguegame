@@ -1,7 +1,7 @@
 import React from 'react';
 import { GameStats } from '../game/types';
 import { sound } from '../game/audio';
-import { RotateCcw, Home, Trophy, Skull, Clock, Zap, Target, Bookmark } from 'lucide-react';
+import { RotateCcw, Home, Trophy, Skull, Clock, Zap, Target, Bookmark, Users } from 'lucide-react';
 
 interface GameOverModalProps {
   stats: GameStats;
@@ -25,6 +25,8 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   };
 
   const isNewRecord = stats.score > highScore;
+
+  const isTwin = stats.gameMode === 'twin_link' && !!stats.twinPilotId;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl">
@@ -62,6 +64,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Twin Link pairing summary */}
+        {isTwin && (
+          <div className="flex items-center justify-center gap-1.5 text-xs font-mono-numbers text-fuchsia-300 border border-fuchsia-500/30 bg-fuchsia-950/30 rounded-xl py-2">
+            <Users size={13} />
+            <span>双子共鸣编队</span>
+            <span className="text-slate-500">·</span>
+            <span>双机共享血条与强化 · 敌潮密度双倍</span>
+          </div>
+        )}
 
         {/* Breakdown Stats Grid */}
         <div className="grid grid-cols-2 gap-3 text-xs">
