@@ -20,7 +20,7 @@ npm test        # vitest，必须全绿
 
 2. **删功能要连文件一起删。** 不要注释掉旧实现，不要留 `// removed`。git 会替你记住。
 
-3. **数值只写一处。** 敌人属性 → `src/game/enemyTypes.ts`；机体 → `src/game/characters/<机体>.ts`；强化 → `src/game/upgrades.ts`；模式差异 → `src/game/modes.ts`。新增敌人 = 表里加一行，不要写 if-else 分支。发现自己要在两个文件改同一个数值，就是设计错了。
+3. **数值只写一处。** 敌人属性 → `src/game/enemyTypes.ts`；机体 → `src/game/characters/<机体>.ts`；强化 → `src/game/upgrades.ts`（溢流模式专属卡 → `src/game/overflowUpgrades.ts`，两池的 key 必须全局唯一，因为共用一个 `upgradeLevels`）；模式差异 → `src/game/modes.ts`。新增敌人 = 表里加一行，不要写 if-else 分支。发现自己要在两个文件改同一个数值，就是设计错了。
 
 4. **加内容前先查清单。** `docs/CONTRIBUTING.md` 有「改动落在哪个文件」速查表，以及加机体 / 加强化 / 加敌人 / **加模式**四份逐文件清单。四类里只有加模式还需要动多处（模式的表现部分），必须照着走。
 
@@ -49,7 +49,9 @@ src/
       index.ts              聚合 CHARACTERS / getCharacterDef / drawCharacterShip
       shipDraw.ts           机体绘制共用画笔（线宽单位、机头）
     enemyTypes.ts         7 种敌人数据表 + 波次表
-    upgrades.ts           25 条强化数据表
+    upgrades.ts           标准池 25 条强化数据表（+ atLevel 逐级取值）
+    overflowUpgrades.ts   溢流模式专属卡池 18 张（独立表，数值不讲等价）
+    upgradePools.ts       卡池分发与跨池查表（poolForMode / findUpgrade）
     player.ts             开局玩家状态构造（合体属性在这里算）
     pilots.ts             双机编队 / 副机属性换算
     resonanceArc.ts       双子共鸣电弧绘制

@@ -56,6 +56,16 @@ describe('game mode table', () => {
     expect(GAME_MODES.twin_link.threatScale).toBe(0);
   });
 
+  it('draws every mode but Overflow from the standard card table', () => {
+    for (const [key, def] of Object.entries(GAME_MODES)) {
+      if (key === 'overflow') {
+        expect(def.cardPool).toBe('overflow');
+      } else {
+        expect(def.cardPool, key).toBe('standard');
+      }
+    }
+  });
+
   it('falls back to the standard run for an unknown mode id', () => {
     expect(modeOf(undefined)).toBe(GAME_MODES.standard);
     expect(modeOf('standard')).toBe(GAME_MODES.standard);

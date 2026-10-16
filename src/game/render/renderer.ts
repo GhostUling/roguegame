@@ -94,6 +94,21 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   // 14. Draw Pointer Reticle (mouse steering only)
   renderMouseCursor(ctx, frame);
 
+  // 15. Overflow Hypercrit White-Out (last, so it sits over everything)
+  renderScreenFlash(ctx, frame);
+
+  ctx.restore();
+}
+
+/** Hypercrit's payoff frame: a full-screen white hit. */
+export function renderScreenFlash(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  const t = frame.player.hypercritFlash;
+  if (!t || t <= 0) return;
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, t / 0.18) * 0.55;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-60, -60, frame.width + 120, frame.height + 120);
   ctx.restore();
 }
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Player } from '../game/types';
 import { sound } from '../game/audio';
-import { ALL_UPGRADES, UpgradeDefinition } from '../game/upgrades';
+import { findUpgrade } from '../game/upgradePools';
 import { getCharacterDef } from '../game/characters';
 import { isPaired } from '../game/modes';
 import {
@@ -267,7 +267,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {upgradeEntries.map(([key, level]) => {
-                    const def = ALL_UPGRADES.find((u) => u.key === key);
+                    const def = findUpgrade(key);
                     if (!def) return null;
                     const theme = getCategoryTheme(def.category);
                     const CategoryIcon = theme.icon;

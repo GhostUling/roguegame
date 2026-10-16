@@ -30,6 +30,8 @@ export interface GameModeDef {
   threatScale: number;
   /** Max HP is the sum of both pilots' chassis HP. */
   pooledHp: boolean;
+  /** Which card table the level-up hand is drawn from (see upgradePools.ts). */
+  cardPool: 'standard' | 'overflow';
   /** UI hue token; the screens map it to Tailwind classes. */
   accent: 'cyan' | 'fuchsia' | 'amber';
 }
@@ -47,6 +49,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     growthScale: 1,
     threatScale: 0,
     pooledHp: false,
+    cardPool: 'standard',
     accent: 'cyan',
   },
   twin_link: {
@@ -61,6 +64,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     growthScale: 1.5,
     threatScale: 0,
     pooledHp: true,
+    cardPool: 'standard',
     accent: 'fuchsia',
   },
   overflow: {
@@ -75,6 +79,8 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     growthScale: 3.0,
     threatScale: 1.0,
     pooledHp: false,
+    // The only mode with its own card table — the whole point of the mode.
+    cardPool: 'overflow',
     accent: 'amber',
   },
 };

@@ -174,6 +174,32 @@ export interface Player {
   kappaShotCharge: number; // Lance Kappa: shots fired since the last piercing ray
   iotaShotCharge: number; // Fusion Iota: shells fired since the last overload blast
 
+  // Overflow card pool (see overflowUpgrades.ts). Only the Overflow mode draws
+  // these cards, so a standard or twin run leaves every one of them at its base.
+  omniBarrageCount: number;
+  omniBarrageDamageScale: number;
+  shardStormCount: number;
+  shardStormDamageScale: number;
+  spawnShotCount: number;
+  spawnShotDamageScale: number;
+  delayedFuse: number; // seconds a landed shell lingers before it detonates
+  stutterInterval: number; // seconds between involuntary blinks, 0 = off
+  stutterTimer: number;
+  critFreezeTime: number; // seconds the world stops on a crit, 0 = off
+  freezeTimer: number; // the shared freeze clock both stopping cards feed
+  verdictInterval: number; // seconds between chrono verdicts, 0 = off
+  verdictTimer: number;
+  verdictFreezeTime: number;
+  comboRatePerTen: number; // fire-rate bonus per 10 combo, 0 = off
+  comboCount: number;
+  comboTimer: number;
+  massRoundScale: number; // px added to the hit radius per 100 damage
+  hypercritChance: number;
+  hypercritFlash: number; // seconds of white-out left after a ×20 hit
+  overdriveScale: number; // speed multiplier while overdriving, 0 = off
+  overdriveIdle: number; // seconds spent standing still while overdriving
+  gamblerRolls: number; // free upgrade advances rolled on each level-up
+
   // Meta deckbuilding & reroll
   rerollCount: number;
   activeSlots: string[]; // max 6 distinct categories/keys
@@ -251,6 +277,10 @@ export interface Projectile {
   isRefractionShard?: boolean;
   /** Fusion Iota overload shell: every sixth round, detonates far wider. */
   isIotaBomb?: boolean;
+  /** Overflow's Delayed Detonation: an armed shell has stopped and counts down. */
+  delayedFuse?: number;
+  /** Overflow's Spawnshotter: a split round, which is barred from splitting again. */
+  isSpawnShot?: boolean;
 }
 
 export interface EnemyProjectile {

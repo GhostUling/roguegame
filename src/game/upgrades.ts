@@ -17,8 +17,11 @@ export interface UpgradeDefinition {
  * Picks the value for a level from a per-level table. The level is passed in by
  * the caller, so a multi-level upgrade keeps scaling past level 1 — a lone
  * boolean flag would make every level above the first a no-op.
+ *
+ * Exported because the Overflow pool (overflowUpgrades.ts) follows the same
+ * convention and shares this one helper rather than keeping a second copy.
  */
-function atLevel<T>(table: T[], level: number): T {
+export function atLevel<T>(table: T[], level: number): T {
   return table[Math.min(table.length, Math.max(1, level)) - 1];
 }
 
@@ -501,14 +504,19 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
  * 1. Filter out already maxed upgrades
  * 2. 6-Slot Cap: if player owns 6 distinct categories/keys, only draw from those 6
  * 3. Tag-weighted synergy: categories player already holds get +40% weighting
+ *
+ * `pool` is the card table to draw from; it defaults to the standard 25 so every
+ * pre-Overflow call site keeps working, and a mode passes its own table instead
+ * (see poolForMode). The two pools are never mixed.
  */
 export function getRandomUpgrades(
   player: Player,
   upgradeLevels: Record<string, number>,
-  count: number = 3
+  count: number = 3,
+  pool: UpgradeDefinition[] = ALL_UPGRADES
 ): UpgradeOption[] {
   // 1. Strict filter: exclude all maxed upgrades
-  const availableDefs = ALL_UPGRADES.filter((u) => {
+  const availableDefs = pool.filter((u) => {
     const currentLvl = upgradeLevels[u.key] || 0;
     return currentLvl < u.maxLevel;
   });
@@ -538,7 +546,7 @@ export function getRandomUpgrades(
   // No artificial slot locking: choosing a build only INCREASES probability, rather than locking out everything else.
   const activeKeys = Object.keys(upgradeLevels).filter((k) => (upgradeLevels[k] || 0) > 0);
   const activeCategories = new Set(
-    activeKeys.map((k) => ALL_UPGRADES.find((u) => u.key === k)?.category).filter(Boolean)
+    activeKeys.map((k) => pool.find((u) => u.key === k)?.category).filter(Boolean)
   );
 
   const isCarrier = player.characterId === 'epsilon_carrier';
@@ -589,15 +597,15 @@ export function getRandomUpgrades(
 
   // Pick weighted random items without duplication
   const selected: UpgradeOption[] = [];
-  const pool = [...weightedCandidates];
-  const targetCount = Math.min(count, pool.length);
+  const candidates = [...weightedCandidates];
+  const targetCount = Math.min(count, candidates.length);
 
   // Early-game archetype support: for Epsilon Carrier at early levels (<= 1 upgrade taken),
   // guarantee at least one summon upgrade appears in the first offering so the summon build starts cleanly.
   if (isCarrier && activeKeys.length <= 1) {
-    const summonIdx = pool.findIndex((item) => item.def.category === 'summon');
+    const summonIdx = candidates.findIndex((item) => item.def.category === 'summon');
     if (summonIdx >= 0) {
-      const chosen = pool.splice(summonIdx, 1)[0].def;
+      const chosen = candidates.splice(summonIdx, 1)[0].def;
       const currentLvl = upgradeLevels[chosen.key] || 0;
       selected.push({
         id: `${chosen.id}_${currentLvl + 1}`,
@@ -618,20 +626,20 @@ export function getRandomUpgrades(
     }
   }
 
-  while (selected.length < targetCount && pool.length > 0) {
-    const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+  while (selected.length < targetCount && candidates.length > 0) {
+    const totalWeight = candidates.reduce((sum, item) => sum + item.weight, 0);
     let rand = Math.random() * totalWeight;
     let chosenIdx = 0;
 
-    for (let i = 0; i < pool.length; i++) {
-      rand -= pool[i].weight;
+    for (let i = 0; i < candidates.length; i++) {
+      rand -= candidates[i].weight;
       if (rand <= 0) {
         chosenIdx = i;
         break;
       }
     }
 
-    const chosen = pool.splice(chosenIdx, 1)[0].def;
+    const chosen = candidates.splice(chosenIdx, 1)[0].def;
     const currentLvl = upgradeLevels[chosen.key] || 0;
 
     selected.push({

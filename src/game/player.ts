@@ -72,8 +72,10 @@ export function createPlayer(
 
   return {
     characterId: charId,
-    // A link request without a second pilot is just a solo run.
-    gameMode: isTwin ? 'twin_link' : 'standard',
+    // A link request without a second pilot is just a solo run; any other pick is
+    // recorded as chosen, which is the only way a solo mode that is not `standard`
+    // (Overflow) can reach its own knobs through modeOfPlayer.
+    gameMode: isTwin ? 'twin_link' : gameMode === 'twin_link' ? 'standard' : gameMode,
     twinPilotId: isTwin ? twinPilotId : undefined,
     pilot2LastFireTime: 0,
     pilot2Angle: 0,
@@ -165,6 +167,31 @@ export function createPlayer(
     chargeDirY: 0,
     kappaShotCharge: 0,
     iotaShotCharge: 0,
+    // Overflow cards (see overflowUpgrades.ts). Every value is the "card not
+    // taken" base, so a standard or twin run never notices they exist.
+    omniBarrageCount: 0,
+    omniBarrageDamageScale: 0,
+    shardStormCount: 0,
+    shardStormDamageScale: 0,
+    spawnShotCount: 0,
+    spawnShotDamageScale: 0,
+    delayedFuse: 0,
+    stutterInterval: 0,
+    stutterTimer: 0,
+    critFreezeTime: 0,
+    freezeTimer: 0,
+    verdictInterval: 0,
+    verdictTimer: 0,
+    verdictFreezeTime: 0,
+    comboRatePerTen: 0,
+    comboCount: 0,
+    comboTimer: 0,
+    massRoundScale: 0,
+    hypercritChance: 0,
+    hypercritFlash: 0,
+    overdriveScale: 0,
+    overdriveIdle: 0,
+    gamblerRolls: 0,
     // Meta & deckbuilding
     rerollCount: 2,
     activeSlots: initialActiveSlots,

@@ -7,7 +7,8 @@ import { GameEngine } from './game/engine';
 import { sound } from './game/audio';
 import { Player, UpgradeOption, GameStats, CharacterId, GameMode } from './game/types';
 import { getRandomUpgrades } from './game/upgrades';
-import { modeForPilots } from './game/modes';
+import { poolForMode } from './game/upgradePools';
+import { modeForPilots, modeOfPlayer } from './game/modes';
 import { VirtualJoystick } from './game/joystick';
 import { HUD } from './components/HUD';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -60,7 +61,7 @@ export default function App() {
         if (!engineRef.current) return;
         const p = engineRef.current.player;
         const currentLevels = p.upgradeLevels || upgradeLevelsRef.current;
-        const options = getRandomUpgrades(p, currentLevels);
+        const options = getRandomUpgrades(p, currentLevels, 3, poolForMode(modeOfPlayer(p)));
         setCurrentUpgrades(options);
         setGameState('levelup');
       },
@@ -233,7 +234,7 @@ export default function App() {
     if ((p.rerollCount || 0) > 0) {
       p.rerollCount--;
       const currentLevels = p.upgradeLevels || upgradeLevelsRef.current;
-      const options = getRandomUpgrades(p, currentLevels);
+      const options = getRandomUpgrades(p, currentLevels, 3, poolForMode(modeOfPlayer(p)));
       setCurrentUpgrades(options);
       setPlayerState({ ...p });
     }

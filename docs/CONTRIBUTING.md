@@ -40,13 +40,15 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 |---|---|---|
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
 | `engine.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线（技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复） | 绘制细节（在 renderer）、数值表（在数据层） |
-| `render/renderer.ts` | 15 个 `render*` 绘制函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
+| `render/renderer.ts` | `renderScene` 内的 15 个编号 pass（含超暴击全屏闪白）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
 | `modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
 | `characters/index.ts` | 聚合 `CHARACTERS`、`getCharacterDef`、`drawCharacterShip` | 具体数值 |
 | `characters/shipDraw.ts` | 机体绘制共用画笔：`strokeUnit`、`drawNoseCone` | 单个机体的造型 |
 | `enemyTypes.ts` | 7 种敌人（含 Boss）的数值表 + 按时间分档的波次权重表 + `enemyHpFor` | 具名刷怪逻辑（在 engine） |
-| `upgrades.ts` | 25 条强化：文案、稀有度、`apply(player)`、上限 | 图鉴的额外解说（在 codexData） |
+| `upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 codexData） |
+| `overflowUpgrades.ts` | 溢流模式专属卡池 18 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 modes） |
+| `upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
 | `player.ts` | `createPlayer`：把选定机体（单机或双机）折算成初始 `Player` | 逐帧状态变更 |
 | `pilots.ts` | `hasPilot` / `getTwinPositions` / `getPilotWeaponStats` | 引擎状态读写、模式判定（在 modes） |
 | `drones.ts` | 无人机/护卫/轨道炮的射速与伤害算式：`interceptorInterval`、`interceptorShotDamage`、`railgunShotDamage` 等 | 逐帧状态（在 engine） |
@@ -133,6 +135,8 @@ requestAnimationFrame
 4. `codexData.ts` 补上 `levels`（**条数必须等于 `maxLevel`**，`__tests__/codex.test.ts` 会拦）与 `synergies`（`targetKey` 必须真实存在）。
 5. `__tests__/upgrades.test.ts` 里 `it('changes the player state on each and every rung')` 会自动覆盖新强化：**任何一级没改变 player 状态就会失败**。数值型的再补一条阶梯断言。
 6. 强化只改 `player` 字段即可，双子模式会自动分摊到两机。
+
+**加到溢流池**：改 `overflowUpgrades.ts`（不是 `upgrades.ts`），其余同上；区别有三处——① 不进 `getRandomUpgrades` 的默认池，靠 `GAME_MODES.overflow.cardPool = 'overflow'` 由 `poolForMode` 分发；② `codexData.ts` 目前只覆盖标准池，溢流池的图鉴分节是待办，所以**不要在 `codexData.ts` 里加溢流条目**（`__tests__/codex.test.ts` 断言两边的 key 集合完全相等，加了就红）；③ 逐级载荷测试在 `__tests__/overflowUpgrades.test.ts`，同样的「每级必须改变状态」规则，外加跨池 key 不冲突的断言。
 
 ### 加一种敌人
 1. `types.ts` 的 `EnemyType` 联合类型加一项

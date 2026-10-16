@@ -30,6 +30,8 @@ import {
   railgunShotDamage,
 } from './drones';
 import { GameModeDef, isPaired, modeOfPlayer } from './modes';
+import { findUpgrade } from './upgradePools';
+import { HYPERCRIT_MULTIPLIER } from './overflowUpgrades';
 import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './enemyTypes';
 import { renderScene } from './render/renderer';
 
@@ -604,11 +606,46 @@ export class GameEngine {
     this.updateMeltCores(dt);
     this.updateBeams(dt);
 
+    // 2b. Overflow card clocks. These are pure timers, so they belong with the
+    //     chassis clocks above rather than inside any one subsystem.
+    //     `freezeTimer` is the one world-stop both stopping cards feed (Crit
+    //     Freeze lands a short hold, Chrono Verdict a scheduled long one).
+    if (this.player.freezeTimer > 0) {
+      this.player.freezeTimer = Math.max(0, this.player.freezeTimer - dt);
+    }
+    if (this.player.hypercritFlash > 0) {
+      this.player.hypercritFlash = Math.max(0, this.player.hypercritFlash - dt);
+    }
+    if (this.player.stutterInterval > 0) {
+      this.player.stutterTimer -= dt;
+      if (this.player.stutterTimer <= 0) {
+        this.player.stutterTimer = this.player.stutterInterval;
+        this.blinkPhase();
+      }
+    }
+    if (this.player.verdictInterval > 0) {
+      this.player.verdictTimer -= dt;
+      if (this.player.verdictTimer <= 0) {
+        this.player.verdictTimer = this.player.verdictInterval;
+        this.player.freezeTimer = Math.max(this.player.freezeTimer, this.player.verdictFreezeTime);
+      }
+    }
+    // Momentum: the combo bleeds out two seconds after the last kill.
+    if (this.player.comboCount > 0) {
+      this.player.comboTimer -= dt;
+      if (this.player.comboTimer <= 0) this.player.comboCount = 0;
+    }
+
+    // Everything below this line still runs during a freeze: the hold stops the
+    // swarm, not the player.
+    const worldFrozen = this.player.freezeTimer > 0;
+
     // 3. Boss schedule & periodic rewards
     this.updateBossSchedule(dt);
 
     // 4. Update Player Movement & Passives
     this.updatePlayerMovement(dt);
+    this.updateOverdriveUpkeep(dt);
 
     // 5. Auto Shoot & Barrage
     this.updateAutoShooting();
@@ -635,11 +672,13 @@ export class GameEngine {
     this.updateProjectiles(dt);
 
     // 13. Update Enemy Projectiles
-    this.updateEnemyProjectiles(dt);
+    if (!worldFrozen) this.updateEnemyProjectiles(dt);
 
     // 14. Spawn & Update Enemies (tactical AI)
-    this.updateEnemySpawning(dt);
-    this.updateEnemies(dt);
+    if (!worldFrozen) {
+      this.updateEnemySpawning(dt);
+      this.updateEnemies(dt);
+    }
 
     // 15. Update Gems & Attraction
     this.updateGems(dt);
@@ -736,6 +775,11 @@ export class GameEngine {
       currentSpeed *= 1.45;
     }
 
+    // Overdrive Engine trades the hull for thrust — the speed carries the card.
+    if (this.player.overdriveScale > 0) {
+      currentSpeed *= this.player.overdriveScale;
+    }
+
     // Aegis Theta's inertial charge steers itself: the vector is locked at cast
     // time, so the stick is ignored until the dash burns out.
     if (this.player.chargeTimer > 0) {
@@ -768,6 +812,62 @@ export class GameEngine {
     if (this.player.invincibleTimer > 0) {
       this.player.invincibleTimer -= dt;
     }
+  }
+
+  /**
+   * Overdrive Engine's upkeep: the reactor only cools while the hull is moving,
+   * so standing still eats 3% of max HP per second after a 1.5s grace.
+   */
+  private updateOverdriveUpkeep(dt: number) {
+    if (this.player.overdriveScale <= 0) return;
+
+    const moving = Math.hypot(this.player.vx, this.player.vy) > this.player.speed * 0.15;
+    this.player.overdriveIdle = moving ? 0 : this.player.overdriveIdle + dt;
+    if (this.player.overdriveIdle <= 1.5) return;
+
+    this.player.hp -= this.player.maxHp * 0.03 * dt;
+    this.player.timeSinceLastDamage = 0;
+    if (this.player.hp <= 0) {
+      this.player.hp = 0;
+      this.handlePlayerDeath();
+    }
+  }
+
+  /** Phase Stutter: jump 160px in a random direction and blow a hole on arrival. */
+  private blinkPhase() {
+    const a = Math.random() * Math.PI * 2;
+    const margin = this.player.radius + 20;
+    this.player.x = Math.max(
+      margin,
+      Math.min(this.width - margin, this.player.x + Math.cos(a) * 160)
+    );
+    this.player.y = Math.max(
+      margin,
+      Math.min(this.height - margin, this.player.y + Math.sin(a) * 160)
+    );
+    this.player.invincibleTimer = Math.max(this.player.invincibleTimer, 0.15);
+    this.detonate(
+      this.player.x,
+      this.player.y,
+      120,
+      Math.round(this.player.bulletDamage * 1.5),
+      '#a78bfa'
+    );
+    this.spawnImpactSparks(this.player.x, this.player.y, '#a78bfa', 6);
+    sound.playClick(true);
+  }
+
+  /** Mass Rounds: the projectile grows with the damage packed behind it. */
+  private bulletRadius(base: number, damage: number): number {
+    if (this.player.massRoundScale <= 0) return base;
+    return base + Math.floor(damage / 100) * this.player.massRoundScale;
+  }
+
+  /** Hypercrit's payoff: one white-out frame and a hard kick. */
+  private triggerHypercrit() {
+    this.player.hypercritFlash = 0.18;
+    this.triggerScreenShake(11);
+    sound.playExplosion(true);
   }
 
   private updateAutoShooting() {
@@ -838,6 +938,11 @@ export class GameEngine {
     if (this.hasPilot('eta_siphon') && this.player.siphonHasteTimer > 0) {
       currentFireRate = Math.max(60, Math.round(currentFireRate / 1.15));
     }
+    // Momentum: every full 10 kills on the combo shortens the interval again.
+    if (this.player.comboRatePerTen > 0 && this.player.comboCount >= 10) {
+      const tiers = Math.floor(this.player.comboCount / 10);
+      currentFireRate = Math.max(40, Math.round(currentFireRate / (1 + this.player.comboRatePerTen * tiers)));
+    }
 
     const lastFireTime =
       index === 0 ? this.player.lastFireTime : this.player.pilot2LastFireTime || 0;
@@ -898,6 +1003,17 @@ export class GameEngine {
       shotDamage = Math.round(shotDamage * 1.4);
     }
 
+    // Overdrive Engine: damage rides on how fast the hull is actually moving,
+    // capped at ×3 so a fully spooled reactor cannot run away with the run.
+    if (this.player.overdriveScale > 0) {
+      const baseSpeed = getCharacterDef(stats.charId).baseStats.speed;
+      const ratio = Math.min(
+        3,
+        Math.hypot(this.player.vx, this.player.vy) / Math.max(0.1, baseSpeed)
+      );
+      shotDamage = Math.round(shotDamage * Math.max(1, ratio));
+    }
+
     // Fusion Iota's every sixth volley is an overload shell. As with the Lance
     // counter, every wing feeds the shared count so a pair of them does not leave
     // one hull firing plain shells forever.
@@ -910,13 +1026,28 @@ export class GameEngine {
       }
     }
 
+    let volleyHypercrit = false;
     for (let i = 0; i < count; i++) {
       const angle = startAngle + i * spreadAngle;
       const isCrit = overloadShell || isGuaranteedCrit || Math.random() < effectiveCritChance;
 
-      const dmg = Math.round(
-        shotDamage * (overloadShell ? 2.5 : isCrit ? stats.critMultiplier : 1)
-      );
+      // Hypercrit: a crit can roll over into a screen-white blow.
+      const isHypercrit =
+        isCrit &&
+        !overloadShell &&
+        this.player.hypercritChance > 0 &&
+        Math.random() < this.player.hypercritChance;
+      if (isHypercrit) volleyHypercrit = true;
+
+      const critScale = isHypercrit
+        ? HYPERCRIT_MULTIPLIER
+        : overloadShell
+          ? 2.5
+          : isCrit
+            ? stats.critMultiplier
+            : 1;
+      const dmg = Math.round(shotDamage * critScale);
+      const baseRadius = overloadShell ? 7 : isCrit ? 5.5 : 4.5;
 
       this.projectiles.push({
         id: this.nextProjId++,
@@ -926,7 +1057,7 @@ export class GameEngine {
         vy: Math.sin(angle) * this.player.bulletSpeed,
         damage: dmg,
         pierce: stats.bulletPierce,
-        radius: overloadShell ? 7 : isCrit ? 5.5 : 4.5,
+        radius: this.bulletRadius(baseRadius, dmg),
         color: overloadShell ? '#fde047' : isCrit ? '#ffee33' : bulletColor,
         trail: [],
         isCrit,
@@ -936,6 +1067,33 @@ export class GameEngine {
         hitEnemyIds: new Set(),
         bouncesRemaining: this.player.bouncingBullets || 0,
       });
+    }
+
+    if (volleyHypercrit) this.triggerHypercrit();
+
+    // Omni Barrage: a full 360° volley bolted onto every shot.
+    if (this.player.omniBarrageCount > 0 && this.projectiles.length < 120) {
+      const omniDmg = Math.round(shotDamage * this.player.omniBarrageDamageScale);
+      for (let i = 0; i < this.player.omniBarrageCount; i++) {
+        const a = baseAngle + (i * Math.PI * 2) / this.player.omniBarrageCount;
+        this.projectiles.push({
+          id: this.nextProjId++,
+          x: origin.x,
+          y: origin.y,
+          vx: Math.cos(a) * this.player.bulletSpeed,
+          vy: Math.sin(a) * this.player.bulletSpeed,
+          damage: omniDmg,
+          pierce: Math.max(0, stats.bulletPierce - 1),
+          radius: this.bulletRadius(4, omniDmg),
+          color: '#fca5a5',
+          trail: [],
+          isCrit: false,
+          life: 0,
+          maxLife: 2.0,
+          hitEnemyIds: new Set(),
+          bouncesRemaining: this.player.bouncingBullets || 0,
+        });
+      }
     }
 
     // Lance Kappa: every fifth volley is a battlefield-wide piercing ray. The
@@ -1344,6 +1502,17 @@ export class GameEngine {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
 
+      // Delayed Detonation: an armed shell has stopped dead where it landed and
+      // burns its fuse. It is no longer a projectile until it goes off.
+      if (p.delayedFuse !== undefined) {
+        p.delayedFuse -= dt;
+        if (p.delayedFuse <= 0) {
+          this.detonate(p.x, p.y, 70, Math.round(p.damage * 1.5), p.color);
+          this.projectiles.splice(i, 1);
+        }
+        continue;
+      }
+
       p.trail.unshift({ x: p.x, y: p.y, alpha: 1.0 });
       if (p.trail.length > 7) {
         p.trail.pop();
@@ -1391,6 +1560,12 @@ export class GameEngine {
             // Cryo slow application
             if (this.player.cryoSlow) {
               enemy.frozenTimer = 2.2;
+            }
+
+            // Crit Freeze: a crit holds the whole swarm for a beat. Refreshing
+            // (never stacking) keeps a fast volley from freezing the run solid.
+            if (p.isCrit && this.player.critFreezeTime > 0) {
+              this.player.freezeTimer = Math.max(this.player.freezeTimer, this.player.critFreezeTime);
             }
 
             sound.playHit();
@@ -1528,6 +1703,49 @@ export class GameEngine {
             ) {
               enemy.hp = 0;
               this.addFloatingText(enemy.x, enemy.y - 18, 'EXECUTE', '#ef4444', true);
+            }
+
+            // Delayed Detonation arms the shell on its first hit: it stops here
+            // and goes off when the fuse runs out instead of flying on.
+            if (this.player.delayedFuse > 0 && p.delayedFuse === undefined && !p.isClusterSub) {
+              p.delayedFuse = this.player.delayedFuse;
+              p.vx = 0;
+              p.vy = 0;
+              p.x = enemy.x;
+              p.y = enemy.y;
+              p.trail = [];
+              break;
+            }
+
+            // Spawnshotter: the round reproduces on impact. Children are barred
+            // from splitting again — otherwise the screen empties in two seconds.
+            if (
+              this.player.spawnShotCount > 0 &&
+              !p.isSpawnShot &&
+              this.projectiles.length < 110
+            ) {
+              const parentAngle = Math.atan2(p.vy, p.vx);
+              const childDmg = Math.max(6, Math.round(p.damage * this.player.spawnShotDamageScale));
+              for (let s = 0; s < this.player.spawnShotCount; s++) {
+                const childA = parentAngle + (s - (this.player.spawnShotCount - 1) / 2) * 0.5;
+                this.projectiles.push({
+                  id: this.nextProjId++,
+                  x: enemy.x,
+                  y: enemy.y,
+                  vx: Math.cos(childA) * this.player.bulletSpeed,
+                  vy: Math.sin(childA) * this.player.bulletSpeed,
+                  damage: childDmg,
+                  pierce: 1,
+                  radius: this.bulletRadius(3, childDmg),
+                  color: '#f0abfc',
+                  trail: [],
+                  isCrit: false,
+                  life: 0,
+                  maxLife: 1.2,
+                  hitEnemyIds: new Set([enemy.id]),
+                  isSpawnShot: true,
+                });
+              }
             }
 
             p.pierce--;
@@ -2467,6 +2685,35 @@ export class GameEngine {
       }
     }
 
+    // Overflow: Momentum banks the kill into the combo, and Shard Storm turns
+    // the carcass into a ring of high-speed fragments.
+    if (this.player.comboRatePerTen > 0) {
+      this.player.comboCount++;
+      this.player.comboTimer = 2.0;
+    }
+    if (this.player.shardStormCount > 0 && this.projectiles.length < 120) {
+      const shardDmg = Math.max(6, Math.round(this.player.bulletDamage * this.player.shardStormDamageScale));
+      for (let s = 0; s < this.player.shardStormCount; s++) {
+        const a = (s * Math.PI * 2) / this.player.shardStormCount + Math.random() * 0.3;
+        this.projectiles.push({
+          id: this.nextProjId++,
+          x: e.x,
+          y: e.y,
+          vx: Math.cos(a) * 12,
+          vy: Math.sin(a) * 12,
+          damage: shardDmg,
+          pierce: 1,
+          radius: this.bulletRadius(3, shardDmg),
+          color: '#fcd34d',
+          trail: [],
+          isCrit: false,
+          life: 0,
+          maxLife: 1.0,
+          hitEnemyIds: new Set([e.id]),
+        });
+      }
+    }
+
     const gemCount = e.isBoss ? 6 : 1;
     for (let g = 0; g < gemCount; g++) {
       const scatterAngle = Math.random() * Math.PI * 2;
@@ -2615,8 +2862,53 @@ export class GameEngine {
     this.triggerScreenShake(6);
     sound.playUpgrade();
 
+    // Gambler's Pact: every level-up also rolls a few free advances on cards the
+    // player already owns, before the hand is drawn.
+    for (let r = 0; r < this.player.gamblerRolls; r++) {
+      this.rollGamblerAdvance();
+    }
+
     this.state = 'levelup';
     this.callbacks.onLevelUp();
+  }
+
+  /**
+   * Gambler's Pact's roll: free-advance one random owned card.
+   *
+   * Advancing a level (rather than the ×2-or-zero the design doc sketched) keeps
+   * `upgradeLevels` monotonic, so a card face can never claim a level the effect
+   * does not have — the exact hazard the doc flagged. Maxed cards are skipped.
+   */
+  private rollGamblerAdvance() {
+    const levels = this.player.upgradeLevels;
+    if (!levels) return;
+
+    const eligible = Object.keys(levels).filter((key) => {
+      const def = findUpgrade(key);
+      return def !== undefined && (levels[key] || 0) < def.maxLevel;
+    });
+    if (eligible.length === 0) return;
+
+    const key = eligible[Math.floor(Math.random() * eligible.length)];
+    const def = findUpgrade(key);
+    if (!def) return;
+
+    const nextLevel = (levels[key] || 0) + 1;
+    def.apply(this.player, nextLevel);
+    levels[key] = nextLevel;
+
+    if (!this.player.activeSlots) this.player.activeSlots = [];
+    if (!this.player.activeSlots.includes(key)) this.player.activeSlots.push(key);
+
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(
+        this.player.x,
+        this.player.y - 26,
+        `${def.nameZh} Lv.${nextLevel}`,
+        '#fcd34d',
+        false
+      );
+    }
   }
 
   private handlePlayerDeath() {
