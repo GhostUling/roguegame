@@ -16,15 +16,15 @@ import {
   Ally,
   Lance,
   Rift,
-} from '../types';
+} from '../core/types';
 import { drawCharacterShip, getCharacterDef } from '../characters';
-import { drawResonanceArc } from '../resonanceArc';
-import { getTwinPositions, hasPilot } from '../pilots';
-import { isPaired } from '../modes';
-import { TURRET_FADE } from '../turrets';
-import { GRID_CELL, GRID_FLASH } from '../gridVerdict';
+import { drawResonanceArc } from './resonanceArc';
+import { getTwinPositions, hasPilot } from '../core/pilots';
+import { isPaired } from '../core/modes';
+import { TURRET_FADE } from '../systems/turrets';
+import { GRID_CELL, GRID_FLASH } from '../systems/gridVerdict';
 import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
-import { LANCE_LENGTH, RIFT_SPACING, riftBranch } from '../riftLance';
+import { LANCE_LENGTH, RIFT_SPACING, riftBranch } from '../systems/riftLance';
 
 /**
  * Everything the renderer reads. GameEngine satisfies this shape structurally, so

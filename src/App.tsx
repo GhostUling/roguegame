@@ -4,12 +4,12 @@
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/engine';
-import { sound } from './game/audio';
-import { Player, UpgradeOption, GameStats, CharacterId, GameMode } from './game/types';
-import { getRandomUpgrades } from './game/upgrades';
-import { poolForMode } from './game/upgradePools';
-import { modeForPilots, modeOfPlayer } from './game/modes';
-import { VirtualJoystick } from './game/joystick';
+import { sound } from './game/infra/audio';
+import { Player, UpgradeOption, GameStats, CharacterId, GameMode } from './game/core/types';
+import { getRandomUpgrades } from './game/cards/upgrades';
+import { poolForMode } from './game/cards/upgradePools';
+import { modeForPilots, modeOfPlayer } from './game/core/modes';
+import { VirtualJoystick } from './game/infra/joystick';
 import { HUD } from './components/HUD';
 import { UpgradeModal } from './components/UpgradeModal';
 import { GameOverModal } from './components/GameOverModal';

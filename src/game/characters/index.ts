@@ -1,4 +1,4 @@
-import { CharacterDef, CharacterId } from '../types';
+import { CharacterDef, CharacterId } from '../core/types';
 import { ShipDrawer } from './shipDraw';
 import { alphaPrism, drawAlphaPrism } from './alphaPrism';
 import { betaPhalanx, drawBetaPhalanx } from './betaPhalanx';

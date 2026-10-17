@@ -1,5 +1,5 @@
 import { CharacterId, Drone, GameMode, Player } from './types';
-import { getCharacterDef } from './characters';
+import { getCharacterDef } from '../characters';
 import { isPaired, modeOf } from './modes';
 
 /**

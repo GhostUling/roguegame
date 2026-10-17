@@ -1,4 +1,4 @@
-import { Player } from './types';
+import { Player } from '../core/types';
 
 /**
  * Prism turret numbers. The engine owns when a turret is deployed and what it

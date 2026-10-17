@@ -1,7 +1,7 @@
 import React from 'react';
-import { GameStats } from '../game/types';
-import { isPaired } from '../game/modes';
-import { sound } from '../game/audio';
+import { GameStats } from '../game/core/types';
+import { isPaired } from '../game/core/modes';
+import { sound } from '../game/infra/audio';
 import { RotateCcw, Home, Trophy, Skull, Clock, Zap, Target, Bookmark, Users } from 'lucide-react';
 
 interface GameOverModalProps {

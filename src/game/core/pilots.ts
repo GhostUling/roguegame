@@ -1,5 +1,5 @@
 import { CharacterId, Player } from './types';
-import { getCharacterDef } from './characters';
+import { getCharacterDef } from '../characters';
 import { isPaired, modeOfPlayer } from './modes';
 
 /** True when the given chassis is flying in this run, on either wing. */

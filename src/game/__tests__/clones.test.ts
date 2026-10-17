@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from '../clones';
-import { findUpgrade } from '../upgradePools';
-import { createPlayer } from '../player';
+import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from '../systems/clones';
+import { findUpgrade } from '../cards/upgradePools';
+import { createPlayer } from '../core/player';
 
 describe('mirror clone numbers', () => {
   it('lasts a while and stays capped', () => {

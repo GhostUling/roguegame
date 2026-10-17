@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CHARACTERS, getCharacterDef } from '../game/characters';
-import { CharacterId, GameMode } from '../game/types';
-import { modeOf } from '../game/modes';
-import { sound } from '../game/audio';
+import { CharacterId, GameMode } from '../game/core/types';
+import { modeOf } from '../game/core/modes';
+import { sound } from '../game/infra/audio';
 import { drawCharacterShip } from '../game/characters';
-import { drawResonanceArc } from '../game/resonanceArc';
+import { drawResonanceArc } from '../game/render/resonanceArc';
 import { Play, ChevronLeft, ChevronRight, Zap, Sparkles, ArrowLeft, Users, RefreshCw } from 'lucide-react';
 
 interface CharacterSelectScreenProps {

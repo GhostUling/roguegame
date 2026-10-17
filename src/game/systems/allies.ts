@@ -1,4 +1,4 @@
-import { Enemy } from './types';
+import { Enemy } from '../core/types';
 
 /**
  * Necro Fleet's revived dead. A revived unit keeps the corpse's shape and most of

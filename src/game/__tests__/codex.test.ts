@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_UPGRADES } from '../upgrades';
-import { CODEX_DETAILS, synergyLabel } from '../codexData';
+import { ALL_UPGRADES } from '../cards/upgrades';
+import { CODEX_DETAILS, synergyLabel } from '../cards/codexData';
 
 describe('codex coverage', () => {
   it('covers every upgrade, with no orphan entries', () => {

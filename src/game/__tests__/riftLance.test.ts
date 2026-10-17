@@ -10,9 +10,9 @@ import {
   riftBranch,
   riftNodePath,
   riftTickDamage,
-} from '../riftLance';
-import { findUpgrade } from '../upgradePools';
-import { createPlayer } from '../player';
+} from '../systems/riftLance';
+import { findUpgrade } from '../cards/upgradePools';
+import { createPlayer } from '../core/player';
 
 describe('rift lance numbers', () => {
   it('flies fast enough to read as a thrown spear, not a shot', () => {

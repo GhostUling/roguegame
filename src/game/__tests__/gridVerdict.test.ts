@@ -5,9 +5,9 @@ import {
   GRID_STUN,
   gridLineDistance,
   gridVerdictDamage,
-} from '../gridVerdict';
-import { findUpgrade } from '../upgradePools';
-import { createPlayer } from '../player';
+} from '../systems/gridVerdict';
+import { findUpgrade } from '../cards/upgradePools';
+import { createPlayer } from '../core/player';
 
 describe('gridLineDistance', () => {
   it('is zero exactly on a line, and peaks halfway between two', () => {

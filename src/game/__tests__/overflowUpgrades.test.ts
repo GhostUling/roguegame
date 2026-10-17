@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_UPGRADES, getRandomUpgrades } from '../upgrades';
-import { OVERFLOW_UPGRADES } from '../overflowUpgrades';
-import { EVERY_UPGRADE, findUpgrade, poolForMode } from '../upgradePools';
-import { GAME_MODES } from '../modes';
-import { createPlayer } from '../player';
-import { Player } from '../types';
+import { ALL_UPGRADES, getRandomUpgrades } from '../cards/upgrades';
+import { OVERFLOW_UPGRADES } from '../cards/overflowUpgrades';
+import { EVERY_UPGRADE, findUpgrade, poolForMode } from '../cards/upgradePools';
+import { GAME_MODES } from '../core/modes';
+import { createPlayer } from '../core/player';
+import { Player } from '../core/types';
 
 /** All numeric/boolean player state, so a no-op level is visible. */
 function snapshot(p: Player): string {

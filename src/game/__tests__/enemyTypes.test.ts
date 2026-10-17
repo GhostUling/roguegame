@@ -5,7 +5,7 @@ import {
   enemyHpFor,
   enemySpeedFor,
   pickEnemyType,
-} from '../enemyTypes';
+} from '../core/enemyTypes';
 
 const ALL_TYPES = ['boss', 'charger', 'chaser', 'hive', 'sniper', 'speeder', 'tank'];
 

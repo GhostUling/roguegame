@@ -23,27 +23,27 @@ import {
   EchoVolley,
   Lance,
   Rift,
-} from './types';
-import { sound } from './audio';
+} from './core/types';
+import { sound } from './infra/audio';
 import { drawCharacterShip, getCharacterDef } from './characters';
-import { drawResonanceArc } from './resonanceArc';
-import { getPilotWeaponStats, getTwinPositions, hasPilot } from './pilots';
-import { createPlayer } from './player';
+import { drawResonanceArc } from './render/resonanceArc';
+import { getPilotWeaponStats, getTwinPositions, hasPilot } from './core/pilots';
+import { createPlayer } from './core/player';
 import {
   interceptorInterval,
   interceptorShotDamage,
   missileShotDamage,
   railgunInterval,
   railgunShotDamage,
-} from './drones';
-import { GameModeDef, isPaired, modeOfPlayer } from './modes';
-import { findUpgrade } from './upgradePools';
-import { HYPERCRIT_MULTIPLIER } from './overflowUpgrades';
-import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from './turrets';
-import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from './gridVerdict';
-import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from './clones';
-import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from './allies';
-import { MAX_PENDING_ECHOES, echoRoundDamage } from './shotEcho';
+} from './systems/drones';
+import { GameModeDef, isPaired, modeOfPlayer } from './core/modes';
+import { findUpgrade } from './cards/upgradePools';
+import { HYPERCRIT_MULTIPLIER } from './cards/overflowUpgrades';
+import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from './systems/turrets';
+import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from './systems/gridVerdict';
+import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from './systems/clones';
+import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from './systems/allies';
+import { MAX_PENDING_ECHOES, echoRoundDamage } from './systems/shotEcho';
 import {
   LANCE_LENGTH,
   LANCE_LIFETIME,
@@ -57,8 +57,8 @@ import {
   lanceDamage,
   riftNodePath,
   riftTickDamage,
-} from './riftLance';
-import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './enemyTypes';
+} from './systems/riftLance';
+import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './core/enemyTypes';
 import { renderScene } from './render/renderer';
 
 export interface GameEngineCallbacks {

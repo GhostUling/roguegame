@@ -1,10 +1,10 @@
 import { UpgradeDefinition, atLevel } from './upgrades';
-import { MAX_TURRETS, TURRET_LIFETIME } from './turrets';
-import { GRID_CELL, GRID_STUN } from './gridVerdict';
-import { CLONE_LIFETIME, MAX_CLONES } from './clones';
-import { MAX_ALLIES, ALLY_LIFETIME } from './allies';
-import { MAX_PENDING_ECHOES } from './shotEcho';
-import { RIFT_TICK_SECONDS } from './riftLance';
+import { MAX_TURRETS, TURRET_LIFETIME } from '../systems/turrets';
+import { GRID_CELL, GRID_STUN } from '../systems/gridVerdict';
+import { CLONE_LIFETIME, MAX_CLONES } from '../systems/clones';
+import { MAX_ALLIES, ALLY_LIFETIME } from '../systems/allies';
+import { MAX_PENDING_ECHOES } from '../systems/shotEcho';
+import { RIFT_TICK_SECONDS } from '../systems/riftLance';
 
 /**
  * The Overflow card pool. Deliberately its own table, never merged into

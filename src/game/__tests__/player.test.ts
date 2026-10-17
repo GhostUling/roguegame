@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTERS } from '../characters';
-import { createPlayer } from '../player';
-import { isPaired } from '../modes';
+import { createPlayer } from '../core/player';
+import { isPaired } from '../core/modes';
 
 describe('createPlayer', () => {
   it('starts a solo run on the chassis own values', () => {

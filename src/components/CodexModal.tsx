@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ALL_UPGRADES, UpgradeDefinition } from '../game/upgrades';
-import { CODEX_DETAILS, CodexDetail, synergyLabel } from '../game/codexData';
-import { sound } from '../game/audio';
+import { ALL_UPGRADES, UpgradeDefinition } from '../game/cards/upgrades';
+import { CODEX_DETAILS, CodexDetail, synergyLabel } from '../game/cards/codexData';
+import { sound } from '../game/infra/audio';
 import {
   X,
   Search,

@@ -1,4 +1,4 @@
-import { Player } from './types';
+import { Player } from '../core/types';
 
 /**
  * Minion math shared by the engine (which fires the drones) and the pause screen

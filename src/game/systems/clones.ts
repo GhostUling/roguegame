@@ -1,4 +1,4 @@
-import { Player } from './types';
+import { Player } from '../core/types';
 
 /**
  * Mirror Self's double. The engine owns where a clone walks and when it fires;

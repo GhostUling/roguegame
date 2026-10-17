@@ -1,8 +1,8 @@
 import React from 'react';
-import { Player } from '../game/types';
+import { Player } from '../game/core/types';
 import { getCharacterDef } from '../game/characters';
-import { getPilotWeaponStats } from '../game/pilots';
-import { isPaired } from '../game/modes';
+import { getPilotWeaponStats } from '../game/core/pilots';
+import { isPaired } from '../game/core/modes';
 import {
   Volume2,
   VolumeX,

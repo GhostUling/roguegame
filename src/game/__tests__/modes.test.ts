@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAME_MODES, isPaired, modeForPilots, modeOf, modeOfPlayer } from '../modes';
+import { GAME_MODES, isPaired, modeForPilots, modeOf, modeOfPlayer } from '../core/modes';
 
 describe('game mode table', () => {
   it('gives every mode a unique id matching its key', () => {

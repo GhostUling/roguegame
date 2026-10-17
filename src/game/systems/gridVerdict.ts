@@ -1,4 +1,4 @@
-import { Player } from './types';
+import { Player } from '../core/types';
 
 /**
  * Grid Verdict's lattice. The verdict cuts everything standing on the lines, so

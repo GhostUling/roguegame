@@ -1,4 +1,4 @@
-import { Player, UpgradeOption, UpgradeCategory, UpgradeRarity } from './types';
+import { Player, UpgradeOption, UpgradeCategory, UpgradeRarity } from '../core/types';
 
 export interface UpgradeDefinition {
   id: string;

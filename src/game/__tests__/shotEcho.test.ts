@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_PENDING_ECHOES, echoRoundDamage } from '../shotEcho';
-import { findUpgrade } from '../upgradePools';
-import { createPlayer } from '../player';
+import { MAX_PENDING_ECHOES, echoRoundDamage } from '../systems/shotEcho';
+import { findUpgrade } from '../cards/upgradePools';
+import { createPlayer } from '../core/player';
 
 describe('shot echo numbers', () => {
   it('keeps a bounded backlog of replays', () => {

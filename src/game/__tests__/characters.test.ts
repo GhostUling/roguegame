@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CharacterId } from '../types';
+import { CharacterId } from '../core/types';
 import { CHARACTERS, drawCharacterShip, getCharacterDef } from '../characters';
 
 /** Every chassis the type union allows, in hangar order. */

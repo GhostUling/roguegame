@@ -1,4 +1,4 @@
-import { GameModeDef } from './modes';
+import { GameModeDef } from '../core/modes';
 import { ALL_UPGRADES, UpgradeDefinition } from './upgrades';
 import { OVERFLOW_UPGRADES } from './overflowUpgrades';
 

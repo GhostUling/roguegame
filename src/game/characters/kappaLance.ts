@@ -1,4 +1,4 @@
-import { CharacterDef } from '../types';
+import { CharacterDef } from '../core/types';
 import { strokeUnit } from './shipDraw';
 
 export const kappaLance: CharacterDef = {

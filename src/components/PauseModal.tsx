@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
-import { Player } from '../game/types';
-import { sound } from '../game/audio';
-import { findUpgrade } from '../game/upgradePools';
+import { Player } from '../game/core/types';
+import { sound } from '../game/infra/audio';
+import { findUpgrade } from '../game/cards/upgradePools';
 import { getCharacterDef } from '../game/characters';
-import { isPaired } from '../game/modes';
+import { isPaired } from '../game/core/modes';
 import {
   interceptorInterval,
   interceptorShotDamage,
   missileShotDamage,
   railgunShotDamage,
-} from '../game/drones';
+} from '../game/systems/drones';
 import {
   Play,
   RotateCcw,

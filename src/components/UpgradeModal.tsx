@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { UpgradeOption, Player } from '../game/types';
-import { sound } from '../game/audio';
+import { UpgradeOption, Player } from '../game/core/types';
+import { sound } from '../game/infra/audio';
 import {
   Zap,
   Shield,

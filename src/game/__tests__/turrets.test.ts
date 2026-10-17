@@ -5,9 +5,9 @@ import {
   TURRET_FIRE_INTERVAL,
   TURRET_LIFETIME,
   turretShotDamage,
-} from '../turrets';
-import { findUpgrade } from '../upgradePools';
-import { createPlayer } from '../player';
+} from '../systems/turrets';
+import { findUpgrade } from '../cards/upgradePools';
+import { createPlayer } from '../core/player';
 
 describe('prism turret numbers', () => {
   it('stands for a while, fires on its own beat, and is capped', () => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { sound } from '../game/audio';
-import { GameMode } from '../game/types';
-import { GAME_MODES } from '../game/modes';
+import { sound } from '../game/infra/audio';
+import { GameMode } from '../game/core/types';
+import { GAME_MODES } from '../game/core/modes';
 import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame } from 'lucide-react';
 
 /** Tailwind classes per mode accent; the mode table only carries the token. */

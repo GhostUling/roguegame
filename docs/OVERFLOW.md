@@ -17,7 +17,7 @@
 ## 2. 与标准模式的结构差异
 
 ```ts
-// game/modes.ts —— GAME_MODES.overflow
+// game/core/modes.ts —— GAME_MODES.overflow
 // 前置：GameModeDef.accent 的联合类型要先加上 'amber'（现为 'cyan' | 'fuchsia'）。
 {
   id: 'overflow',
@@ -78,7 +78,7 @@
 
 到第 4 分钟，一只怪身上同时挂着晶壳、裂殖、过载、殉爆——它打不死、还会分裂、追得上你、死了还炸你。**这就是这个模式后期的威胁来源**，不需要靠数值去追玩家的 ×50。
 
-词缀表放 `enemyTypes.ts`（与 `SPAWN_BRACKETS` 并列，`{ at: number; affix: AffixId }[]`）；敌人对象需要新字段（`shieldHp` / `affix` 标记）。前三档是纯参数与小改，`殉爆` 需要在 `killEnemy` 加一次爆炸。
+词缀表放 `core/enemyTypes.ts`（与 `SPAWN_BRACKETS` 并列，`{ at: number; affix: AffixId }[]`）；敌人对象需要新字段（`shieldHp` / `affix` 标记）。前三档是纯参数与小改，`殉爆` 需要在 `killEnemy` 加一次爆炸。
 
 ### 3.3 BOSS 节奏与终局
 
@@ -93,7 +93,7 @@
 1. **数值不追求彼此等价**——伤害卡是相对乘 ×2.2，不是 ×1.35。
 2. **稀有度放开**——epic / legendary 可以占多数。这个池子不需要给 common 留位置。
 
-卡池单独放一个文件（`game/overflowUpgrades.ts`），`getRandomUpgrades(player, levels, pool)` 按模式分发。**标准池一行不改。**
+卡池单独放一个文件（`game/cards/overflowUpgrades.ts`），`getRandomUpgrades(player, levels, pool)` 按模式分发。**标准池一行不改。**
 
 ## 5. 卡池（24 张）
 
@@ -201,7 +201,7 @@
 ## 8. 落地清单
 
 **模式（照 `docs/CONTRIBUTING.md` 的「加一个模式」清单）**
-`types.ts` 联合类型 → `modes.ts` 一行 → `__tests__/modes.test.ts` 旋钮断言 → `StartScreen` 模式卡（新强调色 `amber` 需在 `ACCENT_CLASSES` 补一条）→ 选人界面单槽 → `HUD`（倒计时 / 词缀条 / 连击）→ 结算面板。
+`core/types.ts` 联合类型 → `core/modes.ts` 一行 → `__tests__/modes.test.ts` 旋钮断言 → `StartScreen` 模式卡（新强调色 `amber` 需在 `ACCENT_CLASSES` 补一条）→ 选人界面单槽 → `HUD`（倒计时 / 词缀条 / 连击）→ 结算面板。
 
 ⚠️ **两处必须先修，否则这个模式会「静默失效」**（现码里第三个模式根本进不去）：
 
@@ -209,10 +209,10 @@
 2. `modes.ts:75` 的 `modeOfPlayer` 不看 `player.gameMode`，而是 `isPaired(player) ? 'twin_link' : 'standard'`。引擎的 `mode()`、`pilots.getTwinPositions` 全走它，所以非双子的溢流跑会**整套读成标准模式**——`spawnMultiplier`、`maxAlive`、`growthScale` 全部悄悄退回 1 / 95 / 1。它必须改成「以 `player.gameMode` 为准，未知才回落 standard」。
 
 **卡池**
-新增 `game/overflowUpgrades.ts`（独立表 + 自己的 `LVL_*`）→ `getRandomUpgrades` 按 `cardPool` 分发 → 图鉴为溢流池单开一节（`levels.length === maxLevel` 的断言同样适用）→ 挂机测试覆盖新池的每一级。
+新增 `game/cards/overflowUpgrades.ts`（独立表 + 自己的 `LVL_*`）→ `getRandomUpgrades` 按 `cardPool` 分发 → 图鉴为溢流池单开一节（`levels.length === maxLevel` 的断言同样适用）→ 挂机测试覆盖新池的每一级。
 
 **敌人**
-`enemyTypes.ts` 给 `EnemyTypeDef` 补 `damageGrowthPerMin` / `speedGrowthPerMin`（与 `hpGrowthPerMin` 并列，同一条数据层）→ 新增 `AFFIX_TABLE` 词缀时间表 → `Enemy` 补 `shieldHp` 与词缀标记 → `spawnEnemy` 读伤害/速度曲线与词缀 → `killEnemy` 加裂殖与殉爆。
+`core/enemyTypes.ts` 给 `EnemyTypeDef` 补 `damageGrowthPerMin` / `speedGrowthPerMin`（与 `hpGrowthPerMin` 并列，同一条数据层）→ 新增 `AFFIX_TABLE` 词缀时间表 → `Enemy` 补 `shieldHp` 与词缀标记 → `spawnEnemy` 读伤害/速度曲线与词缀 → `killEnemy` 加裂殖与殉爆。
 
 ## 9. 建议分期
 

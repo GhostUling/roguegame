@@ -1,4 +1,4 @@
-import { Player } from './types';
+import { Player } from '../core/types';
 
 /**
  * Shot Echo's delayed replay. The engine queues one record per volley and fires

@@ -1,4 +1,4 @@
-import { CharacterDef } from '../types';
+import { CharacterDef } from '../core/types';
 import { drawNoseCone, strokeUnit } from './shipDraw';
 
 export const iotaFusion: CharacterDef = {

@@ -1,4 +1,4 @@
-import { Player } from './types';
+import { Player } from '../core/types';
 
 /**
  * Rift Lance. The lance is a thrown spear, not a hitscan beam: it flies across

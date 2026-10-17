@@ -5,10 +5,10 @@ import {
   ALLY_SPEED_SCALE,
   MAX_ALLIES,
   allyFromEnemy,
-} from '../allies';
-import { findUpgrade } from '../upgradePools';
-import { createPlayer } from '../player';
-import { Enemy } from '../types';
+} from '../systems/allies';
+import { findUpgrade } from '../cards/upgradePools';
+import { createPlayer } from '../core/player';
+import { Enemy } from '../core/types';
 
 /** A corpse shaped like something killEnemy would hand over. */
 const corpse = (over: Partial<Enemy> = {}): Enemy => ({
