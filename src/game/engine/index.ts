@@ -23,27 +23,27 @@ import {
   EchoVolley,
   Lance,
   Rift,
-} from './core/types';
-import { sound } from './infra/audio';
-import { drawCharacterShip, getCharacterDef } from './characters';
-import { drawResonanceArc } from './render/resonanceArc';
-import { getPilotWeaponStats, getTwinPositions, hasPilot } from './core/pilots';
-import { createPlayer } from './core/player';
+} from '../core/types';
+import { sound } from '../infra/audio';
+import { drawCharacterShip, getCharacterDef } from '../characters';
+import { drawResonanceArc } from '../render/resonanceArc';
+import { getPilotWeaponStats, getTwinPositions, hasPilot } from '../core/pilots';
+import { createPlayer } from '../core/player';
 import {
   interceptorInterval,
   interceptorShotDamage,
   missileShotDamage,
   railgunInterval,
   railgunShotDamage,
-} from './systems/drones';
-import { GameModeDef, isPaired, modeOfPlayer } from './core/modes';
-import { findUpgrade } from './cards/upgradePools';
-import { HYPERCRIT_MULTIPLIER } from './cards/overflowUpgrades';
-import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from './systems/turrets';
-import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from './systems/gridVerdict';
-import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from './systems/clones';
-import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from './systems/allies';
-import { MAX_PENDING_ECHOES, echoRoundDamage } from './systems/shotEcho';
+} from '../systems/drones';
+import { GameModeDef, isPaired, modeOfPlayer } from '../core/modes';
+import { findUpgrade } from '../cards/upgradePools';
+import { HYPERCRIT_MULTIPLIER } from '../cards/overflowUpgrades';
+import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from '../systems/turrets';
+import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from '../systems/gridVerdict';
+import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from '../systems/clones';
+import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from '../systems/allies';
+import { MAX_PENDING_ECHOES, echoRoundDamage } from '../systems/shotEcho';
 import {
   LANCE_LENGTH,
   LANCE_LIFETIME,
@@ -57,9 +57,10 @@ import {
   lanceDamage,
   riftNodePath,
   riftTickDamage,
-} from './systems/riftLance';
-import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './core/enemyTypes';
-import { renderScene } from './render/renderer';
+} from '../systems/riftLance';
+import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from '../core/enemyTypes';
+import { renderScene } from '../render/renderer';
+import { EnemyAiCue, EnemyBolt, stepEnemyAi } from './enemyAi';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -142,6 +143,8 @@ export class GameEngine {
   private bossSpawnedTimers: Set<number> = new Set();
   public bossWarningActive: boolean = false;
   private bossWarningTimer: number = 0;
+  /** Sandbox only: contact and enemy rounds stop subtracting HP. */
+  public devInvincible: boolean = false;
   private nextDroneId: number = 1;
   private nextBeamId: number = 1;
   private nextMeltId: number = 1;
@@ -273,6 +276,7 @@ export class GameEngine {
     this.bossSpawnedTimers.clear();
     this.bossWarningActive = false;
     this.bossWarningTimer = 0;
+    this.devInvincible = false;
     this.shakeIntensity = 0;
     this.state = 'playing';
 
@@ -291,6 +295,46 @@ export class GameEngine {
 
   public pauseGame() {
     this.state = 'paused';
+  }
+
+  /**
+   * Sandbox only: place `count` enemies of one type in a ring around the hull.
+   * The ring sits just outside a sniper's preferred band so its approach and
+   * charge are visible. No-op in every real mode.
+   */
+  public spawnTestEnemies(type: EnemyType, count: number = 1) {
+    const mode = this.mode();
+    if (!mode.manualSpawn) return;
+
+    const ring = 330;
+    const margin = 60;
+    const base = Math.random() * Math.PI * 2;
+    for (let i = 0; i < count; i++) {
+      if (this.enemies.length >= mode.maxAlive) return;
+      const angle = base + (i / count) * Math.PI * 2;
+      const x = Math.max(margin, Math.min(this.width - margin, this.player.x + Math.cos(angle) * ring));
+      const y = Math.max(margin, Math.min(this.height - margin, this.player.y + Math.sin(angle) * ring));
+      if (type === 'boss') {
+        this.spawnBoss(x, y);
+      } else {
+        this.createEnemy(type, x, y);
+      }
+    }
+  }
+
+  /** Sandbox only: wipe the field, the enemy rounds and the gems they dropped. */
+  public clearTestField() {
+    if (!this.mode().manualSpawn) return;
+    this.enemies = [];
+    this.enemyProjectiles = [];
+    this.gems = [];
+    this.bossWarningActive = false;
+  }
+
+  /** Sandbox only: stop (or resume) all damage to the player. */
+  public setDevInvincible(on: boolean) {
+    if (!this.mode().manualSpawn) return;
+    this.devInvincible = on;
   }
 
   public triggerScreenShake(intensity: number) {
@@ -796,6 +840,9 @@ export class GameEngine {
   }
 
   private updateBossSchedule(dt: number) {
+    // The sandbox decides when a boss arrives; the schedule would add its own.
+    if (this.mode().manualSpawn) return;
+
     const bossCheckpoints = [120, 240, 360, 480];
     for (const time of bossCheckpoints) {
       if (this.gameTime >= time - 5 && this.gameTime < time && !this.bossSpawnedTimers.has(time)) {
@@ -2403,7 +2450,7 @@ export class GameEngine {
             maxLife: 0.25,
           });
           sound.playClick(true);
-        } else if (this.player.invincibleTimer <= 0) {
+        } else if (this.player.invincibleTimer <= 0 && !this.devInvincible) {
           const incomingDmg = ep.damage - this.soakWithTempShield(ep.damage);
 
           if (incomingDmg > 0) {
@@ -2743,6 +2790,9 @@ export class GameEngine {
   }
 
   private updateEnemySpawning(dt: number) {
+    // In the sandbox the field only holds what the test panel placed.
+    if (this.mode().manualSpawn) return;
+
     this.nextWaveTimer += dt;
     const spawnInterval = Math.max(0.2, 1.2 - (this.gameTime / 180) * 0.85);
 
@@ -2761,7 +2811,6 @@ export class GameEngine {
   }
 
   private spawnEnemy(type: EnemyType) {
-    const def = ENEMY_TYPES[type];
     const pad = 50;
     let x = 0;
     let y = 0;
@@ -2781,6 +2830,12 @@ export class GameEngine {
       y = Math.random() * this.height;
     }
 
+    this.createEnemy(type, x, y);
+  }
+
+  /** Builds one enemy at a chosen point; wave spawning and the sandbox share it. */
+  private createEnemy(type: EnemyType, x: number, y: number) {
+    const def = ENEMY_TYPES[type];
     const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
     const threat = this.enemyThreatScale();
 
@@ -2820,10 +2875,8 @@ export class GameEngine {
     return this.mode().threatScale;
   }
 
-  private spawnBoss() {
+  private spawnBoss(x: number = this.width / 2, y: number = -80) {
     const def = ENEMY_TYPES.boss;
-    const x = this.width / 2;
-    const y = -80;
     const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
 
     this.enemies.push({
@@ -2854,6 +2907,41 @@ export class GameEngine {
 
     this.triggerScreenShake(12);
     sound.playBossAlarm();
+  }
+
+  private playEnemyAiCue(cue: EnemyAiCue) {
+    switch (cue) {
+      case 'sniper-aim':
+        sound.playSniperAim();
+        break;
+      case 'sniper-lock':
+        sound.playSniperLock();
+        break;
+      case 'laser-shot':
+        sound.playLaserShot();
+        break;
+      case 'charger-dash':
+        sound.playChargerDash();
+        break;
+      case 'boss-burst':
+        sound.playExplosion(false);
+        break;
+    }
+  }
+
+  private spawnEnemyBolt(e: Enemy, bolt: EnemyBolt) {
+    this.enemyProjectiles.push({
+      id: this.nextEnemyProjId++,
+      x: e.x,
+      y: e.y,
+      vx: Math.cos(bolt.angle) * bolt.speed,
+      vy: Math.sin(bolt.angle) * bolt.speed,
+      damage: bolt.damage,
+      radius: bolt.radius,
+      color: bolt.color,
+      life: 0,
+      maxLife: bolt.maxLife,
+    });
   }
 
   private updateEnemies(dt: number) {
@@ -2911,142 +2999,10 @@ export class GameEngine {
       const pdy = chasesSecondWing ? d2y : d1y;
       const pDist = Math.hypot(pdx, pdy);
 
-      // ==========================================
-      // TACTICAL ENEMY BEHAVIOR STATEMACHINES
-      // ==========================================
-      if (e.type === 'sniper') {
-        // Keeps 250px distance and charges laser
-        if (pDist < 200) {
-          // Back up
-          e.vx = -(pdx / pDist) * e.speed * currentSlow;
-          e.vy = -(pdy / pDist) * e.speed * currentSlow;
-        } else if (pDist > 300) {
-          // Approach
-          e.vx = (pdx / pDist) * e.speed * currentSlow;
-          e.vy = (pdy / pDist) * e.speed * currentSlow;
-        } else {
-          // Hover
-          e.vx *= 0.9;
-          e.vy *= 0.9;
-        }
-
-        if (e.state === 'idle' && e.attackCooldown && e.attackCooldown <= 0 && pDist < 380) {
-          e.state = 'charging';
-          e.stateTimer = 0;
-          e.aimLocked = false;
-          sound.playSniperAim();
-        } else if (e.state === 'charging') {
-          e.stateTimer = (e.stateTimer || 0) + dt;
-
-          // Phase 1: Real-time aiming / tracking player (0s to 0.7s)
-          if (e.stateTimer < 0.7) {
-            e.aimAngle = Math.atan2(pdy, pdx);
-            e.aimLocked = false;
-          } else {
-            // Phase 2: PATH IS LOCKED for exactly 0.5s (0.7s to 1.2s)!
-            if (!e.aimLocked) {
-              e.aimLocked = true;
-              sound.playSniperLock(); // Tension warning cue!
-            }
-            // e.aimAngle remains frozen so the player has 0.5s reaction window to step aside!
-          }
-
-          if (e.stateTimer >= 1.2) {
-            // Fire laser shot along the locked path
-            e.state = 'idle';
-            e.stateTimer = 0;
-            e.aimLocked = false;
-            e.attackCooldown = 3.2;
-            sound.playLaserShot();
-
-            const fireAngle = e.aimAngle ?? Math.atan2(pdy, pdx);
-            this.enemyProjectiles.push({
-              id: this.nextEnemyProjId++,
-              x: e.x,
-              y: e.y,
-              vx: Math.cos(fireAngle) * 11,
-              vy: Math.sin(fireAngle) * 11,
-              damage: e.damage,
-              radius: 4.5,
-              color: '#38bdf8',
-              life: 0,
-              maxLife: 2.0,
-            });
-          }
-        }
-      } else if (e.type === 'charger') {
-        // Dasher
-        if (e.state === 'idle') {
-          e.vx = (pdx / pDist) * e.speed * currentSlow;
-          e.vy = (pdy / pDist) * e.speed * currentSlow;
-
-          if (pDist < 240 && e.attackCooldown && e.attackCooldown <= 0) {
-            e.state = 'charging';
-            e.stateTimer = 0;
-            e.chargeDir = { x: pdx / pDist, y: pdy / pDist };
-            e.vx = 0;
-            e.vy = 0;
-          }
-        } else if (e.state === 'charging') {
-          e.stateTimer = (e.stateTimer || 0) + dt;
-          // Pulse warning
-          if (e.stateTimer >= 0.8) {
-            e.state = 'firing';
-            e.stateTimer = 0;
-            sound.playChargerDash();
-          }
-        } else if (e.state === 'firing') {
-          e.stateTimer = (e.stateTimer || 0) + dt;
-          const dashSpeed = e.speed * 3.8 * currentSlow;
-          e.vx = (e.chargeDir?.x || 0) * dashSpeed;
-          e.vy = (e.chargeDir?.y || 0) * dashSpeed;
-
-          if (e.stateTimer >= 0.5) {
-            e.state = 'cooldown';
-            e.stateTimer = 0;
-            e.vx = 0;
-            e.vy = 0;
-          }
-        } else if (e.state === 'cooldown') {
-          e.stateTimer = (e.stateTimer || 0) + dt;
-          e.vx *= 0.8;
-          e.vy *= 0.8;
-          if (e.stateTimer >= 0.9) {
-            e.state = 'idle';
-            e.attackCooldown = 2.4;
-          }
-        }
-      } else if (e.type === 'boss') {
-        // Periodic 16-bullet barrage ring
-        const angle = Math.atan2(pdy, pdx);
-        e.vx = Math.cos(angle) * e.speed * currentSlow;
-        e.vy = Math.sin(angle) * e.speed * currentSlow;
-
-        if (e.attackCooldown && e.attackCooldown <= 0) {
-          e.attackCooldown = 4.2;
-          sound.playExplosion(false);
-          for (let b = 0; b < 16; b++) {
-            const bAngle = (b * Math.PI * 2) / 16 + e.rotation;
-            this.enemyProjectiles.push({
-              id: this.nextEnemyProjId++,
-              x: e.x,
-              y: e.y,
-              vx: Math.cos(bAngle) * 5.5,
-              vy: Math.sin(bAngle) * 5.5,
-              damage: 18,
-              radius: 5,
-              color: '#ff0077',
-              life: 0,
-              maxLife: 3.5,
-            });
-          }
-        }
-      } else {
-        // Standard chaser / speeder / tank / hive
-        const angle = Math.atan2(pdy, pdx);
-        e.vx = Math.cos(angle) * e.speed * currentSlow;
-        e.vy = Math.sin(angle) * e.speed * currentSlow;
-      }
+      const ai = stepEnemyAi(e, { dx: pdx, dy: pdy, dist: pDist }, dt, currentSlow);
+      for (const cue of ai.cues) this.playEnemyAiCue(cue);
+      if (ai.bolt) this.spawnEnemyBolt(e, ai.bolt);
+      if (ai.barrage) for (const bolt of ai.barrage) this.spawnEnemyBolt(e, bolt);
 
       // Fast soft separation
       const checkLimit = Math.min(this.enemies.length, i + 6);
@@ -3109,7 +3065,7 @@ export class GameEngine {
             maxLife: 0.25,
           });
           sound.playClick(true);
-        } else if (this.player.invincibleTimer <= 0) {
+        } else if (this.player.invincibleTimer <= 0 && !this.devInvincible) {
           let incomingDmg = e.damage;
           if (this.player.droneShield) {
             incomingDmg = Math.max(1, Math.round(incomingDmg * (1 - this.player.droneShieldReduction)));
