@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * Tests cover the pure rule modules only (enemy tables, pilot maths, upgrade
- * effects). Rendering and the engine loop need a canvas, so they stay out of
- * scope — verified by hand in the browser instead.
+ * Tests cover the pure rule modules (enemy tables, pilot maths, upgrade effects)
+ * plus one structural check on the renderer: it reads that file as text and never
+ * draws. Anything that needs a canvas stays out of scope — the engine loop, and
+ * whether a frame actually looks right, are both verified by hand.
  */
 export default defineConfig({
   test: {

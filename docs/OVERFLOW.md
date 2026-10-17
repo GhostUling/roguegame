@@ -95,7 +95,7 @@
 
 卡池单独放一个文件（`game/cards/overflowUpgrades.ts`），`getRandomUpgrades(player, levels, pool)` 按模式分发。**标准池一行不改。**
 
-## 5. 卡池（24 张）
+## 5. 卡池（25 张）
 
 标注：`参数` = 现有钩子的数值组合；`小改` = 需要一个新的敌人/子弹字段或计时器；`新系统` = 需要新的机制管线。
 

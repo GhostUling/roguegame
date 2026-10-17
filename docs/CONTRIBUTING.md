@@ -22,7 +22,7 @@ npm run preview # 预览构建产物
 ```
 UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 编排层       src/App.tsx               界面状态机，把引擎状态喂给 UI
-              src/game/engine.ts       游戏状态 + update 流水线（约 2000 行）
+              src/game/engine.ts       游戏状态 + update 流水线（2026-10 实测 3624 行，全仓最大的文件）
 共享层       src/game/core/            引擎 / UI / 测试都读的模型与规则
               types.ts（共享类型）/ modes.ts（模式表）/ pilots.ts（双机换算）
               player.ts（开局构造）/ enemyTypes.ts（敌人表 + 波次）
@@ -45,15 +45,15 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | 文件 | 职责 | 不该放什么 |
 |---|---|---|
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
-| `engine.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线（技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复） | 绘制细节（在 renderer）、数值表（在数据层） |
+| `engine.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线 + 3 处子步（2b 溢流卡牌时钟 / 5b 射击回响与裂空光矛 / 7b 炮台·分身·友军）。主干：技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复 | 绘制细节（在 renderer）、数值表（在 core / cards） |
 | `render/renderer.ts` | `renderScene` 内的 17 个编号 pass（含超暴击全屏闪白、网格裁决的网格）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
 | `core/modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
 | `characters/index.ts` | 聚合 `CHARACTERS`、`getCharacterDef`、`drawCharacterShip` | 具体数值 |
 | `characters/shipDraw.ts` | 机体绘制共用画笔：`strokeUnit`、`drawNoseCone` | 单个机体的造型 |
-| `core/enemyTypes.ts` | 7 种敌人（含 Boss）的数值表 + 按时间分档的波次权重表 + `enemyHpFor` | 具名刷怪逻辑（在 engine） |
-| `cards/upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 codexData） |
-| `cards/overflowUpgrades.ts` | 溢流模式专属卡池 18 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 modes） |
+| `core/enemyTypes.ts` | 7 种敌人（含 Boss）的数值表 + 按时间分档的波次权重表 + `enemyHpFor` | 具名刷怪逻辑（在 `engine.ts`） |
+| `cards/upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 `cards/codexData.ts`） |
+| `cards/overflowUpgrades.ts` | 溢流模式专属卡池 25 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 `core/modes.ts`） |
 | `cards/upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
 | `systems/turrets.ts` / `systems/gridVerdict.ts` / `systems/clones.ts` / `systems/allies.ts` / `systems/shotEcho.ts` / `systems/riftLance.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、友军属性推导、重放弹伤害、裂痕沿路径采样），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
 | `render/friendlyMarker.ts` | 我方单位的统一标记（色值 / 环距 / 线宽 / `drawFriendlyMarker`），炮台、分身、友军三处渲染共用 | 各单位自身的造型 |
