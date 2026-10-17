@@ -40,7 +40,7 @@ import { GameModeDef, isPaired, modeOfPlayer } from '../core/modes';
 import { findUpgrade } from '../cards/upgradePools';
 import { HYPERCRIT_MULTIPLIER } from '../cards/overflowUpgrades';
 import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from '../systems/turrets';
-import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from '../systems/gridVerdict';
+import { GRID_FLASH, GRID_STRIKE_AT, GRID_STUN, gridLineDistance, gridVerdictDamage } from '../systems/gridVerdict';
 import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from '../systems/clones';
 import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from '../systems/allies';
 import { MAX_PENDING_ECHOES, echoRoundDamage } from '../systems/shotEcho';
@@ -64,6 +64,7 @@ import { EnemyAiCue, EnemyBolt, stepEnemyAi } from './enemyAi';
 import { circlesTouch, firstWingHit, roundHitsEnemy } from './collision';
 import { afterDroneShield, statusDamageMultiplier } from './damage';
 import { GEM_CAP, advanceLevel, bankGem, gemDropFor, gemPullSpeed, killScore } from './drops';
+import { DebugEvent, pushDebugEvent } from './debugTrace';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -148,6 +149,10 @@ export class GameEngine {
   private bossWarningTimer: number = 0;
   /** Sandbox only: contact and enemy rounds stop subtracting HP. */
   public devInvincible: boolean = false;
+  /** Runtime trace switch (pause menu): records hits and derived-round decisions. */
+  public debugTraceEnabled: boolean = false;
+  public debugEvents: DebugEvent[] = [];
+  private nextDebugSeq: number = 1;
   private nextDroneId: number = 1;
   private nextBeamId: number = 1;
   private nextMeltId: number = 1;
@@ -280,6 +285,7 @@ export class GameEngine {
     this.bossWarningActive = false;
     this.bossWarningTimer = 0;
     this.devInvincible = false;
+    this.debugEvents = [];
     this.shakeIntensity = 0;
     this.state = 'playing';
 
@@ -338,6 +344,23 @@ export class GameEngine {
   public setDevInvincible(on: boolean) {
     if (!this.mode().manualSpawn) return;
     this.devInvincible = on;
+  }
+
+  /** Turns the runtime trace on or off; turning it off clears the buffer. */
+  public setDebugTrace(on: boolean) {
+    this.debugTraceEnabled = on;
+    this.debugEvents = [];
+  }
+
+  /** One traced event; ignored unless the switch is on. */
+  public recordDebugEvent(tag: string, detail: string) {
+    if (!this.debugTraceEnabled) return;
+    pushDebugEvent(this.debugEvents, {
+      seq: this.nextDebugSeq++,
+      t: this.gameTime,
+      tag,
+      detail,
+    });
   }
 
   public triggerScreenShake(intensity: number) {
@@ -737,7 +760,16 @@ export class GameEngine {
       this.player.gridTimer -= dt;
       if (this.player.gridTimer <= 0) {
         this.player.gridTimer = this.player.gridInterval;
-        this.runGridVerdict();
+        this.startGridVerdict();
+      }
+    }
+    // The lattice assembles first and cuts at the flash, so the wind-up is part
+    // of the card's own clock and keeps running through a world freeze.
+    if (this.player.gridAnim >= 0) {
+      this.player.gridAnim += dt;
+      if (this.player.gridAnim >= GRID_STRIKE_AT) {
+        this.player.gridAnim = -1;
+        this.applyGridVerdict();
       }
     }
 
@@ -1512,12 +1544,18 @@ export class GameEngine {
     sound.playShoot(0.75);
   }
 
+  /** Opens the lattice wind-up; the cut itself lands GRID_STRIKE_AT later. */
+  private startGridVerdict() {
+    this.player.gridAnim = 0;
+    sound.playSniperAim();
+  }
+
   /**
    * Grid Verdict: cut everything standing on the lattice. The scan is one pass
    * over the swarm with two modulo checks per enemy — the same order as the AI
    * loop it sits beside, and deliberately not a walk over the grid's cells.
    */
-  private runGridVerdict() {
+  private applyGridVerdict() {
     const damage = gridVerdictDamage(this.player);
     let cut = 0;
 
@@ -2137,6 +2175,14 @@ export class GameEngine {
           if (roundHitsEnemy(p.x, p.y, p.radius, enemy)) {
             p.hitEnemyIds.add(enemy.id);
 
+            // Trace every player-round hit, before any branch can break out of
+            // the block: sec=1 means this round is not allowed to split, count=0
+            // means the card never reached the player, n is the projectile cap.
+            this.recordDebugEvent(
+              'hit',
+              `sec=${p.isSecondary ? 1 : 0} count=${this.player.spawnShotCount} n=${this.projectiles.length} fuse=${this.player.delayedFuse ?? 0}`
+            );
+
             // Status vulnerability: cryo freeze and the Lance mark both amplify hits.
             const finalDmg = Math.round(p.damage * statusDamageMultiplier(enemy, this.player));
 
@@ -2336,6 +2382,7 @@ export class GameEngine {
                   fromSkill: p.fromSkill,
                 });
               }
+              this.recordDebugEvent('spawn', `FIRED ${this.player.spawnShotCount}`);
             }
 
             p.pierce--;

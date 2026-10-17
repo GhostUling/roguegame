@@ -9,6 +9,8 @@ const COUNTS = [1, 5, 20];
 
 interface SandboxPanelProps {
   invincible: boolean;
+  cardPool: 'standard' | 'overflow';
+  onChangeCardPool: (pool: 'standard' | 'overflow') => void;
   onSpawn: (type: EnemyType, count: number) => void;
   onClear: () => void;
   onToggleInvincible: () => void;
@@ -16,6 +18,8 @@ interface SandboxPanelProps {
 
 export const SandboxPanel: React.FC<SandboxPanelProps> = ({
   invincible,
+  cardPool,
+  onChangeCardPool,
   onSpawn,
   onClear,
   onToggleInvincible,
@@ -42,6 +46,23 @@ export const SandboxPanel: React.FC<SandboxPanelProps> = ({
             }`}
           >
             {n}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center h-7 rounded-lg bg-slate-900/80 border border-slate-700/60 overflow-hidden mb-2">
+        <span className="px-2 text-[10px] font-mono-numbers text-slate-500">卡池</span>
+        {(['standard', 'overflow'] as const).map((pool) => (
+          <button
+            key={pool}
+            onClick={() => onChangeCardPool(pool)}
+            className={`flex-1 h-full text-[11px] font-mono-numbers border-l border-slate-800 transition-colors cursor-pointer ${
+              pool === cardPool
+                ? 'bg-emerald-500/25 text-emerald-200 font-bold'
+                : 'text-slate-400 hover:text-slate-100'
+            }`}
+          >
+            {pool === 'standard' ? '标准' : '溢流'}
           </button>
         ))}
       </div>
@@ -90,7 +111,7 @@ export const SandboxPanel: React.FC<SandboxPanelProps> = ({
       </div>
 
       <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-        敌人环绕机体 330px 生成；清场会一并移除敌弹与掉落。
+        敌人环绕机体 330px 生成；清场会一并移除敌弹与掉落。卡池决定升级三选一抽哪张表。
       </p>
     </div>
   );

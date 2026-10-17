@@ -63,7 +63,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `cards/upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 `cards/codexData.ts`） |
 | `cards/overflowUpgrades.ts` | 溢流模式专属卡池 25 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 `core/modes.ts`） |
 | `cards/upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
-| `systems/turrets.ts` / `systems/gridVerdict.ts` / `systems/clones.ts` / `systems/allies.ts` / `systems/shotEcho.ts` / `systems/riftLance.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、友军属性推导、重放弹伤害、裂痕沿路径采样），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
+| `systems/turrets.ts` / `systems/gridVerdict.ts` / `systems/clones.ts` / `systems/allies.ts` / `systems/shotEcho.ts` / `systems/riftLance.ts` | 新系统卡的纯数值与算式（炮台伤害、格距与前摇时间轴、分身站位、友军属性推导、重放弹伤害、裂痕沿路径采样），引擎、渲染与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
 | `render/friendlyMarker.ts` | 我方单位的统一标记（色值 / 环距 / 线宽 / `drawFriendlyMarker`），炮台、分身、友军三处渲染共用 | 各单位自身的造型 |
 | `core/player.ts` | `createPlayer`：把选定机体（单机或双机）折算成初始 `Player` | 逐帧状态变更 |
 | `core/pilots.ts` | `hasPilot` / `getTwinPositions` / `getPilotWeaponStats` | 引擎状态读写、模式判定（在 modes） |
@@ -98,8 +98,9 @@ requestAnimationFrame
 `GAME_MODES.sandbox` 是人工验证用的模式，只在 `npm run dev` 的标题界面出现（`devOnly`），生产构建里被过滤掉：
 
 - `manualSpawn: true`：引擎跳过普通刷怪与 Boss 排程，场上只会有手动放置的敌人。
-- 右侧面板（`components/SandboxPanel.tsx`）按类型生成 1 / 5 / 20 只，敌人环绕机体 330px 生成；面板还能开无敌、清场（连同敌弹与掉落）。
+- 右侧面板（`components/SandboxPanel.tsx`）按类型生成 1 / 5 / 20 只，敌人环绕机体 330px 生成；面板还能开无敌、清场（连同敌弹与掉落），并切换升级卡池（标准 / 溢流）——溢流专属卡（全向弹幕、子弹繁殖等）只在溢流池里抽得到。
 - 引擎 API 都带模式守卫，在真实模式里是空操作：`spawnTestEnemies(type, count)` / `clearTestField()` / `setDevInvincible(on)`；每次 `startNewGame` 都会把无敌关掉。
+- 暂停菜单里的 **裂变追踪** 开关（`localStorage: geom_overload_debug_trace`）会在左上角记录每次玩家弹命中时的 `sec / count / n / fuse` 与实际 `FIRED` 次数，选卡时也记一条 `card`；用来定位派生弹（子弹繁殖等）不触发的原因。追踪事件同时由 dev 中间件追加到仓库根的 **`debug-trace.log`**（JSON lines，已被 `*.log` 忽略），编码助手直接读文件即可，不需要截图。生产构建没有这个接口。
 - 回归在 `__tests__/sandbox.test.ts`：不自动刷怪、按类型计数生成、真实模式里 API 无效、无敌挡伤且关掉后照常掉血。
 
 ## 引擎开发范式（2026-10 定型）

@@ -193,6 +193,7 @@ export function createPlayer(
     gridTimer: 0,
     gridDamageScale: 0,
     gridFlash: 0,
+    gridAnim: -1,
     cloneInterval: 0,
     cloneTimer: 0,
     cloneDamageScale: 0,

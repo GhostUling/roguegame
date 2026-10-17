@@ -200,7 +200,7 @@ export const OVERFLOW_UPGRADES: UpgradeDefinition[] = [
     key: 'grid_verdict',
     name: 'Grid Verdict',
     nameZh: '网格裁决',
-    desc: `周期性把整片战场切成 ${GRID_CELL}px 网格：任何压在网格线上的几何体当场被切开并僵停。`,
+    desc: `周期性从四边扫出 ${GRID_CELL}px 网格：线条铺满并发亮后，任何压在网格线上的几何体当场被切开并僵停。`,
     category: 'energy',
     rarity: 'legendary',
     maxLevel: 2,

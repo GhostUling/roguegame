@@ -209,6 +209,7 @@ export interface Player {
   gridTimer: number;
   gridDamageScale: number;
   gridFlash: number; // seconds the lattice stays lit, drives the renderer
+  gridAnim: number; // seconds into the wind-up; -1 when no verdict is assembling
   cloneInterval: number; // seconds between mirror clones, 0 = card not taken
   cloneTimer: number;
   cloneDamageScale: number;

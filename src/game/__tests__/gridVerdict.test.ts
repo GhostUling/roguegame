@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   GRID_CELL,
   GRID_FLASH,
+  GRID_GLOW,
+  GRID_LINE_TIME,
+  GRID_STAGGER,
+  GRID_STRIKE_AT,
   GRID_STUN,
+  GRID_WINDUP,
+  gridGlowIntensity,
   gridLineDistance,
+  gridLineFromStart,
+  gridLineReveal,
   gridVerdictDamage,
 } from '../systems/gridVerdict';
 import { findUpgrade } from '../cards/upgradePools';
@@ -42,6 +50,38 @@ describe('grid verdict tuning', () => {
     expect(GRID_CELL).toBeGreaterThan(0);
     expect(GRID_FLASH).toBeGreaterThan(0);
     expect(GRID_STUN).toBeGreaterThan(0);
+  });
+});
+
+describe('grid verdict wind-up', () => {
+  it('starts empty and assembles every line by GRID_WINDUP', () => {
+    for (let seed = 0; seed < 80; seed++) {
+      expect(gridLineReveal(seed, 0)).toBe(0);
+      expect(gridLineReveal(seed, GRID_WINDUP)).toBe(1);
+    }
+  });
+
+  it('staggers the lines instead of revealing them together', () => {
+    const values = Array.from({ length: 40 }, (_, seed) => gridLineReveal(seed, 0.1));
+    expect(values.some((v) => v === 0)).toBe(true);
+    expect(values.some((v) => v > 0 && v < 1)).toBe(true);
+  });
+
+  it('gives every line a stable edge, and uses both edges', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      expect(gridLineFromStart(seed)).toBe(gridLineFromStart(seed));
+    }
+    const edges = new Set(Array.from({ length: 40 }, (_, seed) => gridLineFromStart(seed)));
+    expect(edges.has(true)).toBe(true);
+    expect(edges.has(false)).toBe(true);
+  });
+
+  it('holds the full glow before the cut lands', () => {
+    expect(GRID_WINDUP).toBe(GRID_STAGGER + GRID_LINE_TIME);
+    expect(GRID_STRIKE_AT).toBe(GRID_WINDUP + GRID_GLOW);
+    expect(gridGlowIntensity(GRID_WINDUP)).toBe(0);
+    expect(gridGlowIntensity(GRID_STRIKE_AT)).toBe(1);
+    expect(gridGlowIntensity(GRID_STRIKE_AT + 1)).toBe(1);
   });
 });
 

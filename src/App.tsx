@@ -18,6 +18,9 @@ import { StartScreen } from './components/StartScreen';
 import { CharacterSelectScreen } from './components/CharacterSelectScreen';
 import { CodexModal } from './components/CodexModal';
 import { SandboxPanel } from './components/SandboxPanel';
+import { DebugTracePanel } from './components/DebugTracePanel';
+import { DebugEvent } from './game/engine/debugTrace';
+import { flushTrace } from './game/infra/traceSink';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -62,6 +65,18 @@ export default function App() {
   const [controlMode, setControlMode] = useState<'keys' | 'mouse'>('keys');
   /** Sandbox only; reset with every new run so it can never leak into a real one. */
   const [devInvincible, setDevInvincible] = useState<boolean>(false);
+  /** Test switch: which card table the sandbox draws from. */
+  const [sandboxPool, setSandboxPool] = useState<'standard' | 'overflow'>('standard');
+  const sandboxPoolRef = useRef<'standard' | 'overflow'>('standard');
+  /** Test switch: record player-round hits and spawn-shot decisions. */
+  const [debugTrace, setDebugTrace] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('geom_overload_debug_trace') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
 
   // Initialize Canvas & Game Engine
   useEffect(() => {
@@ -72,7 +87,11 @@ export default function App() {
         if (!engineRef.current) return;
         const p = engineRef.current.player;
         const currentLevels = p.upgradeLevels || upgradeLevelsRef.current;
-        const options = getRandomUpgrades(p, currentLevels, 3, poolForMode(modeOfPlayer(p)));
+        const pool = poolForMode(
+          modeOfPlayer(p),
+          p.gameMode === 'sandbox' ? sandboxPoolRef.current : undefined
+        );
+        const options = getRandomUpgrades(p, currentLevels, 3, pool);
         setCurrentUpgrades(options);
         setGameState('levelup');
       },
@@ -128,6 +147,38 @@ export default function App() {
       engine.destroy();
     };
   }, []);
+
+  // Push the trace switch into the live engine and poll its ring buffer while
+  // it is on; the engine writes at bullet-hit rate, React only needs a glance.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    if (debugTrace) {
+      engine.setDebugTrace(true);
+      engine.recordDebugEvent(
+        'session',
+        `char=${engine.player.characterId} mode=${engine.player.gameMode} spawnShot=${engine.player.spawnShotCount}`
+      );
+      flushTrace(engine.debugEvents);
+    } else {
+      flushTrace(engine.debugEvents);
+      engine.setDebugTrace(false);
+      setDebugEvents([]);
+    }
+  }, [debugTrace]);
+
+  useEffect(() => {
+    if (!debugTrace || gameState !== 'playing') return;
+    const id = setInterval(() => {
+      const engine = engineRef.current;
+      if (engine) {
+        setDebugEvents(engine.debugEvents.slice(-10));
+        flushTrace(engine.debugEvents);
+      }
+    }, 400);
+    return () => clearInterval(id);
+  }, [debugTrace, gameState]);
 
   const pauseGame = useCallback(() => {
     if (engineRef.current && gameState === 'playing') {
@@ -269,6 +320,24 @@ export default function App() {
     });
   }, []);
 
+  const handleChangeSandboxPool = useCallback((pool: 'standard' | 'overflow') => {
+    sandboxPoolRef.current = pool;
+    setSandboxPool(pool);
+  }, []);
+
+  const handleToggleDebugTrace = useCallback(() => {
+    setDebugTrace((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('geom_overload_debug_trace', next ? '1' : '0');
+      } catch {
+        // Ignore
+      }
+      sound.playClick(true);
+      return next;
+    });
+  }, []);
+
   const handleReroll = useCallback(() => {
     if (!engineRef.current) return;
     const p = engineRef.current.player;
@@ -277,7 +346,11 @@ export default function App() {
     if (!infiniteReroll) p.rerollCount--;
 
     const currentLevels = p.upgradeLevels || upgradeLevelsRef.current;
-    const options = getRandomUpgrades(p, currentLevels, 3, poolForMode(modeOfPlayer(p)));
+    const pool = poolForMode(
+      modeOfPlayer(p),
+      p.gameMode === 'sandbox' ? sandboxPoolRef.current : undefined
+    );
+    const options = getRandomUpgrades(p, currentLevels, 3, pool);
     setCurrentUpgrades(options);
     setPlayerState({ ...p });
   }, [infiniteReroll]);
@@ -300,6 +373,7 @@ export default function App() {
       upgrade.apply(p, nextLevel);
 
       p.upgradeLevels[upgrade.key] = nextLevel;
+      engineRef.current.recordDebugEvent('card', `${upgrade.key} Lv.${nextLevel}`);
       upgradeLevelsRef.current = { ...p.upgradeLevels };
 
       setUpgradeLevels({ ...p.upgradeLevels });
@@ -350,11 +424,15 @@ export default function App() {
       {gameState === 'playing' && gameMode === 'sandbox' && playerState && (
         <SandboxPanel
           invincible={devInvincible}
+          cardPool={sandboxPool}
+          onChangeCardPool={handleChangeSandboxPool}
           onSpawn={handleSpawnTestEnemies}
           onClear={handleClearTestField}
           onToggleInvincible={handleToggleDevInvincible}
         />
       )}
+
+      {debugTrace && gameState === 'playing' && <DebugTracePanel events={debugEvents} />}
 
       {/* Start Title Screen */}
       {gameState === 'title' && (
@@ -401,6 +479,8 @@ export default function App() {
           onToggleMute={toggleMute}
           infiniteReroll={infiniteReroll}
           onToggleInfiniteReroll={toggleInfiniteReroll}
+          debugTrace={debugTrace}
+          onToggleDebugTrace={handleToggleDebugTrace}
           onResume={resumeGame}
           onRestart={() => startGameWithChar(selectedCharacterId, twinPilotId || undefined)}
           onHome={() => setGameState('character_select')}

@@ -21,9 +21,15 @@ export const CARD_POOLS: Record<GameModeDef['cardPool'], UpgradeDefinition[]> = 
  */
 export const EVERY_UPGRADE: UpgradeDefinition[] = [...ALL_UPGRADES, ...OVERFLOW_UPGRADES];
 
-/** The table a mode draws from. */
-export function poolForMode(mode: Pick<GameModeDef, 'cardPool'>): UpgradeDefinition[] {
-  return CARD_POOLS[mode.cardPool];
+/**
+ * The table a mode draws from. `override` exists for the sandbox's card-pool
+ * switch; real runs pass nothing, so a mode's own table always wins.
+ */
+export function poolForMode(
+  mode: Pick<GameModeDef, 'cardPool'>,
+  override?: GameModeDef['cardPool']
+): UpgradeDefinition[] {
+  return CARD_POOLS[override ?? mode.cardPool];
 }
 
 /** Finds a card in either pool; undefined when no pool owns the key. */

@@ -22,7 +22,14 @@ import { drawResonanceArc } from './resonanceArc';
 import { getTwinPositions, hasPilot } from '../core/pilots';
 import { isPaired } from '../core/modes';
 import { TURRET_FADE } from '../systems/turrets';
-import { GRID_CELL, GRID_FLASH } from '../systems/gridVerdict';
+import {
+  GRID_CELL,
+  GRID_FLASH,
+  GRID_WINDUP,
+  gridGlowIntensity,
+  gridLineFromStart,
+  gridLineReveal,
+} from '../systems/gridVerdict';
 import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
 import { LANCE_LENGTH, RIFT_SPACING, riftBranch } from '../systems/riftLance';
 
@@ -136,19 +143,8 @@ export function renderScreenFlash(ctx: CanvasRenderingContext2D, frame: RenderSt
   ctx.restore();
 }
 
-/**
- * Grid Verdict's lattice. The cell size is the same constant the engine's scan
- * cuts with, so a line the player can see is a line that bites. One path for the
- * whole lattice, and no glow work per line.
- */
-export function renderGridVerdict(ctx: CanvasRenderingContext2D, frame: RenderState) {
-  const flash = frame.player.gridFlash;
-  if (!flash || flash <= 0) return;
-
-  ctx.save();
-  ctx.globalAlpha = Math.min(1, flash / GRID_FLASH) * 0.5;
-  ctx.strokeStyle = '#a855f7';
-  ctx.lineWidth = 1.5;
+/** One path for the whole lattice; the scan cuts exactly these lines. */
+function traceLattice(ctx: CanvasRenderingContext2D, frame: RenderState) {
   ctx.beginPath();
   for (let x = 0; x <= frame.width; x += GRID_CELL) {
     ctx.moveTo(x, 0);
@@ -158,13 +154,107 @@ export function renderGridVerdict(ctx: CanvasRenderingContext2D, frame: RenderSt
     ctx.moveTo(0, y);
     ctx.lineTo(frame.width, y);
   }
-  ctx.stroke();
+}
 
-  // A brighter band on each line gives the cut its edge without a second pass.
-  ctx.globalAlpha *= 0.6;
-  ctx.strokeStyle = '#e9d5ff';
-  ctx.lineWidth = 0.75;
-  ctx.stroke();
+/**
+ * Grid Verdict's lattice, in three beats: lines sweep in unevenly from the
+ * edges, the assembled grid charges white, then the cut lands.
+ *
+ * The cell size and the sweep timeline are the same constants the engine cuts
+ * with, so a line the player can see is a line that bites.
+ */
+export function renderGridVerdict(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  const anim = frame.player.gridAnim;
+  const flash = frame.player.gridFlash;
+  if (anim < 0 && (!flash || flash <= 0)) return;
+
+  ctx.save();
+  ctx.lineCap = 'butt';
+
+  if (anim >= 0) {
+    const glowing = anim >= GRID_WINDUP;
+    const glow = gridGlowIntensity(anim);
+
+    if (!glowing) {
+      // Beat 1 — each line crosses the field on its own delay and from its own
+      // edge, which is what makes the sweep feel uneven instead of a wipe.
+      const tips: { x: number; y: number; vertical: boolean }[] = [];
+      ctx.beginPath();
+      for (let x = 0, i = 0; x <= frame.width; x += GRID_CELL, i++) {
+        const reveal = gridLineReveal(i, anim);
+        if (reveal <= 0) continue;
+        const fromTop = gridLineFromStart(i);
+        const endY = fromTop ? frame.height * reveal : frame.height - frame.height * reveal;
+        ctx.moveTo(x, fromTop ? 0 : frame.height);
+        ctx.lineTo(x, endY);
+        if (reveal < 1) tips.push({ x, y: endY, vertical: true });
+      }
+      for (let y = 0, i = 0; y <= frame.height; y += GRID_CELL, i++) {
+        const seed = 1000 + i;
+        const reveal = gridLineReveal(seed, anim);
+        if (reveal <= 0) continue;
+        const fromLeft = gridLineFromStart(seed);
+        const endX = fromLeft ? frame.width * reveal : frame.width - frame.width * reveal;
+        ctx.moveTo(fromLeft ? 0 : frame.width, y);
+        ctx.lineTo(endX, y);
+        if (reveal < 1) tips.push({ x: endX, y, vertical: false });
+      }
+      ctx.globalAlpha = 0.45;
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      // A hot leading tip turns each line into a travelling cut, not a wipe.
+      if (tips.length > 0) {
+        ctx.beginPath();
+        for (const tip of tips) {
+          if (tip.vertical) {
+            ctx.moveTo(tip.x, tip.y - 7);
+            ctx.lineTo(tip.x, tip.y + 7);
+          } else {
+            ctx.moveTo(tip.x - 7, tip.y);
+            ctx.lineTo(tip.x + 7, tip.y);
+          }
+        }
+        ctx.globalAlpha = 0.95;
+        ctx.strokeStyle = '#f5e8ff';
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+      }
+    } else {
+      // Beat 2 — the grid is whole and charging. A wide haze under a white core
+      // reads as the lines lighting up rather than as a static picture.
+      ctx.globalAlpha = 0.22 + glow * 0.4;
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 4 + glow * 3;
+      traceLattice(ctx, frame);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.55 + glow * 0.45;
+      ctx.strokeStyle = '#f5e8ff';
+      ctx.lineWidth = 0.8 + glow * 1.4;
+      traceLattice(ctx, frame);
+      ctx.stroke();
+    }
+  }
+
+  // Beat 3 — the cut: the whole lattice flashes white, then fades.
+  if (flash > 0) {
+    const fade = Math.min(1, flash / GRID_FLASH);
+
+    ctx.globalAlpha = fade * 0.3;
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 2.5 + fade * 3;
+    traceLattice(ctx, frame);
+    ctx.stroke();
+
+    ctx.globalAlpha = fade * 0.9;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.9;
+    traceLattice(ctx, frame);
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 

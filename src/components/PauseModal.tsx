@@ -40,6 +40,9 @@ interface PauseModalProps {
   /** Test switch: level-up rerolls stop consuming the run's reroll count. */
   infiniteReroll: boolean;
   onToggleInfiniteReroll: () => void;
+  /** Test switch: overlay the hit/spawn-shot runtime trace. */
+  debugTrace: boolean;
+  onToggleDebugTrace: () => void;
   onResume: () => void;
   onRestart: () => void;
   onHome: () => void;
@@ -54,6 +57,8 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onToggleMute,
   infiniteReroll,
   onToggleInfiniteReroll,
+  debugTrace,
+  onToggleDebugTrace,
   onResume,
   onRestart,
   onHome,
@@ -695,6 +700,19 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             >
               <RefreshCw size={15} />
               <span>无限刷新 {infiniteReroll ? '开' : '关'}</span>
+            </button>
+
+            <button
+              onClick={onToggleDebugTrace}
+              title="测试用：左上角记录每次玩家子弹命中与裂变（子弹繁殖）的判定结果"
+              className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer border ${
+                debugTrace
+                  ? 'bg-emerald-500/15 border-emerald-400/60 text-emerald-300'
+                  : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-300'
+              }`}
+            >
+              <Activity size={15} />
+              <span>裂变追踪 {debugTrace ? '开' : '关'}</span>
             </button>
 
             <button
