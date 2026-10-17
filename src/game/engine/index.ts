@@ -63,6 +63,7 @@ import { renderScene } from '../render/renderer';
 import { EnemyAiCue, EnemyBolt, stepEnemyAi } from './enemyAi';
 import { circlesTouch, firstWingHit, roundHitsEnemy } from './collision';
 import { afterDroneShield, statusDamageMultiplier } from './damage';
+import { GEM_CAP, advanceLevel, bankGem, gemDropFor, gemPullSpeed, killScore } from './drops';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -3073,7 +3074,7 @@ export class GameEngine {
   private killEnemy(e: Enemy, index: number) {
     this.enemies.splice(index, 1);
     this.player.kills++;
-    this.player.score += e.isBoss ? 1500 : Math.round(e.maxHp * 2);
+    this.player.score += killScore(e);
 
     this.triggerScreenShake(e.isBoss ? 12 : 3);
     sound.playExplosion(e.isBoss);
@@ -3212,29 +3213,29 @@ export class GameEngine {
       }
     }
 
-    const gemCount = e.isBoss ? 6 : 1;
-    for (let g = 0; g < gemCount; g++) {
+    const drop = gemDropFor(e);
+    for (let g = 0; g < drop.count; g++) {
       const scatterAngle = Math.random() * Math.PI * 2;
-      const scatterDist = Math.random() * (e.isBoss ? 30 : 8);
+      const scatterDist = Math.random() * drop.scatter;
       this.gems.push({
         id: this.nextGemId++,
         x: e.x + Math.cos(scatterAngle) * scatterDist,
         y: e.y + Math.sin(scatterAngle) * scatterDist,
         vx: (Math.random() - 0.5) * 1.2,
         vy: (Math.random() - 0.5) * 1.2,
-        value: e.isBoss ? 5 : e.expValue,
-        radius: e.isBoss ? 7 : 5,
+        value: drop.value,
+        radius: drop.radius,
         rotation: 0,
         rotSpeed: 3.5,
-        color: e.isBoss ? '#00e5ff' : '#00ffaa',
+        color: drop.color,
         attracted: false,
       });
     }
   }
 
   private updateGems(dt: number) {
-    if (this.gems.length > 90) {
-      const excess = this.gems.length - 90;
+    if (this.gems.length > GEM_CAP) {
+      const excess = this.gems.length - GEM_CAP;
       for (let k = 0; k < excess; k++) {
         if (this.gems.length > 1) {
           const removed = this.gems.shift()!;
@@ -3266,9 +3267,7 @@ export class GameEngine {
       if (distSq < magnetSq || g.attracted) {
         g.attracted = true;
         const dist = Math.sqrt(distSq);
-        const pullSpeed =
-          Math.min(18, 5 + (1 - dist / (this.player.magnetRadius + 100)) * 14) *
-          this.player.gemPullSpeedScale;
+        const pullSpeed = gemPullSpeed(dist, this.player.magnetRadius, this.player.gemPullSpeedScale);
         g.vx = (dx / Math.max(1, dist)) * pullSpeed;
         g.vy = (dy / Math.max(1, dist)) * pullSpeed;
 
@@ -3292,22 +3291,20 @@ export class GameEngine {
   }
 
   private collectGem(gem: Gem) {
-    this.player.xp += gem.value;
+    const filled = bankGem(this.player, gem.value);
     sound.playExp(Math.min(20, this.player.xp % 10));
 
     if (this.hasPilot('delta_chronos') && this.player.skillCooldown > 0) {
       this.player.skillCooldown = Math.max(0, this.player.skillCooldown - 0.15);
     }
 
-    if (this.player.xp >= this.player.nextLevelXp) {
+    if (filled) {
       this.handleLevelUp();
     }
   }
 
   private handleLevelUp() {
-    this.player.level++;
-    this.player.xp -= this.player.nextLevelXp;
-    this.player.nextLevelXp = Math.floor(20 * Math.pow(1.28, this.player.level - 1));
+    advanceLevel(this.player);
 
     // Gravity Siphon Synergy: suck all gems on level up
     if (this.player.gravitySiphon) {
