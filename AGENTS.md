@@ -12,7 +12,7 @@ npm run build   # vite build，必须成功
 npm test        # vitest，必须全绿
 ```
 
-三绿之前不要声称完成。涉及画面或手感的改动，还要在 `npm run dev`（端口 3000）里实际玩一遍确认——**这一步由人来做，编码助手不要自己去点浏览器**。
+三绿之前不要声称完成。涉及画面或手感的改动，还要在 `npm run dev`（端口 3000）里实际玩一遍确认——**这一步由人来做，编码助手不要自己去点浏览器**。引擎循环有 headless 回归（`engineLoop.test.ts`），但它不比对数值、也不看画面；需要特定敌人状态时用 dev 环境的**测试场**（见 `docs/CONTRIBUTING.md`）。
 
 ## 硬约束
 
@@ -32,7 +32,9 @@ npm test        # vitest，必须全绿
 
 8. **引擎是唯一状态源。** 不要在 React 组件里保存游戏状态副本并回写引擎；`App.tsx` 只做状态机与传参。
 
-9. **提交信息用 Conventional Commits**（`feat:` / `fix:` / `refactor:` / `docs:` / `chore:`），正文说明「为什么」。不要加 AI 署名尾巴。
+9. **提交信息用 Conventional Commits**（`feat:` / `fix:` / `refactor:` / `test:` / `docs:` / `chore:`），正文说明「为什么」。不要加 AI 署名尾巴。重构切片与它的测试放在同一个提交里。
+
+10. **引擎按「纯规则 / 编排」分层。** `engine/index.ts` 只放可变状态、`update()` 流水线与副作用（音效、粒子、震屏、回调）；不带副作用的判断与算式放 `engine/<领域>.ts`（样板：`enemyAi` 决策、`collision` 命中、`damage` 伤害、`drops` 收益与经验）。纯模块不 import 引擎、不碰 DOM，入参用 `Pick<>` 收窄，模块内常量是唯一真值，并且必须配 `__tests__/<领域>.test.ts`。迁移逻辑属于**行为不变**的重构：数值与公式原样搬，已知怪癖用测试钉住并写进交付说明，不顺手改玩法。完整流程见 `docs/CONTRIBUTING.md` 的「引擎开发范式」。
 
 ## 目录速查
 
