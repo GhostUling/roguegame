@@ -15,7 +15,7 @@ npm test        # vitest run，纯函数模块的行为测试
 npm run preview # 预览构建产物
 ```
 
-测试只覆盖不需要 canvas 的纯函数模块（数值表、属性换算、模式旋钮）。`engine.ts` 的循环与 `renderer.ts` 的绘制没有自动化回归，改了这两处必须人肉玩一遍。
+测试覆盖不需要 canvas 的纯函数模块（数值表、属性换算、模式旋钮）。`engine.ts` 的循环没有自动化回归。`renderer.ts` 有一条**结构性**测试（`__tests__/renderer.test.ts`：把源码当文本读入，断言每个 `export function render*` 都被 `renderScene` 调用、pass 编号连续、玩家子弹画在敌方子弹之后机体之前），它只挡「绘制环节被摘掉」，**不验证画面对不对**——改了引擎循环或渲染效果，仍然必须人肉玩一遍。
 
 ## 分层
 
@@ -57,7 +57,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `resonanceArc.ts` | `drawResonanceArc`，双机之间的电弧，游戏内与选人预览共用 | 机体造型（在 characters） |
 | `audio.ts` | Web Audio 程序化音效 | 播放时机判断（由引擎调用） |
 | `joystick.ts` | 触摸摇杆，暴露归一化 `vector` | — |
-| `__tests__/*.test.ts` | 纯函数模块的行为测试（vitest，node 环境）。**不放**需要 canvas 的引擎循环与渲染 | 任何生产代码 |
+| `__tests__/*.test.ts` | 纯函数模块的行为测试（vitest，node 环境）；`renderer.test.ts` 是唯一的例外，它读源码做结构性检查，不碰 canvas。**不放**需要 canvas 的引擎循环 | 任何生产代码 |
 
 ## 数据流（一帧）
 
@@ -175,6 +175,6 @@ requestAnimationFrame
 1. **图鉴承诺了、引擎里没有的行为** —— 4 组：`cluster_bombs` 3 级「连锁破片殉爆」、`summon_railgun` 3 级「持续 1 秒的高温电浆裂隙」、`drone_missiles` 3 级「持续范围燃烧震波」、`drone_overclock` 的「无人机命中附加 20% 易伤 / 牺牲飞梭抵挡致命伤 / 12 秒自动重生」。目前这些等级只做到纯数值提升。补齐需要新增持续伤害区、替死判定、重生计时之类的系统——**是加功能，不是修 bug**；动手前先决定补齐还是收敛文案。
 2. **图鉴逐级文案里的数字是手写散文** —— `levels[].description` 的绝对数值不由 `upgrades.ts` 的数值表推导，改数值时可能在文案里留下假的数字（已修过 fire_rate 的 250ms 基准、shield 的自愈数值、critical_core 的倍率上限、railgun 的 3.2s、nova 的 2.5s 共 5 处）。
 3. **`engine.ts` 仍是单体编排类** —— 敌人 AI 状态机、碰撞、掉落仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`modes.ts`）、玩家构造（`player.ts`）、无人机算式（`drones.ts`）做过拆分，后续若继续拆分，建议顺序：敌人 AI → 碰撞/伤害 → 掉落与经验。
-4. **测试覆盖不全** —— 只覆盖纯函数模块（`npm test`）。引擎循环与渲染需要 canvas，仍只能靠手玩。
+4. **测试覆盖不全** —— 覆盖纯函数模块 + 渲染层的结构性检查（`npm test`）。引擎循环需要 canvas，渲染效果是否正确，两者都仍只能靠手玩。
 5. **`PauseModal` 残留硬编码** —— 如轨道炮「贯穿 5 敌」的 5 与引擎里的 `pierce: 5` 是两份。无人机算式已收进 `drones.ts` 共用，同类数字遇到就顺手收拢。另外暂停菜单底部有一个 **无限刷新** 开关（`localStorage: geom_overload_infinite_reroll`）：它是测试开关，只让升级重抽不消耗次数，不改变任何玩法数值，默认关闭。
 6. **3× 倍速下单帧步长最大 0.24s** —— 位移约 63px/帧，极快的敌人理论上可能穿过碰撞判定。若要消除需引入子步进。
