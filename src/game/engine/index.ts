@@ -61,6 +61,8 @@ import {
 import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from '../core/enemyTypes';
 import { renderScene } from '../render/renderer';
 import { EnemyAiCue, EnemyBolt, stepEnemyAi } from './enemyAi';
+import { circlesTouch, firstWingHit, roundHitsEnemy } from './collision';
+import { afterDroneShield, statusDamageMultiplier } from './damage';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -1526,7 +1528,7 @@ export class GameEngine {
       cut++;
       e.hitFlashTimer = 0.08;
       e.stunTimer = Math.max(e.stunTimer || 0, GRID_STUN);
-      this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)));
+      this.damageEnemy(e, Math.round(damage * statusDamageMultiplier(e, this.player)));
       if (e.hp <= 0) this.killEnemy(e, i);
     }
 
@@ -1642,7 +1644,7 @@ export class GameEngine {
         if (dist <= reach && a.attackCooldown <= 0) {
           a.attackCooldown = ALLY_CONTACT_COOLDOWN;
           enemy.hitFlashTimer = 0.08;
-          this.damageEnemy(enemy, Math.round(a.damage * this.statusDamageMultiplier(enemy)), 'ally');
+          this.damageEnemy(enemy, Math.round(a.damage * statusDamageMultiplier(enemy, this.player)), 'ally');
           this.spawnImpactSparks(enemy.x, enemy.y, '#34d399', 3);
           if (enemy.hp <= 0) {
             const idx = this.enemies.indexOf(enemy);
@@ -1808,7 +1810,7 @@ export class GameEngine {
         if (dx * dx + dy * dy > reach * reach) continue;
 
         e.hitFlashTimer = 0.06;
-        this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)));
+        this.damageEnemy(e, Math.round(damage * statusDamageMultiplier(e, this.player)));
         if (e.hp <= 0) this.killEnemy(e, k);
       }
     }
@@ -1866,7 +1868,7 @@ export class GameEngine {
 
       lance.hitEnemyIds.add(e.id);
       e.hitFlashTimer = 0.1;
-      this.damageEnemy(e, Math.round(lance.damage * this.statusDamageMultiplier(e)));
+      this.damageEnemy(e, Math.round(lance.damage * statusDamageMultiplier(e, this.player)));
       this.spawnImpactSparks(e.x, e.y, '#c084fc', 3);
       if (e.hp <= 0) this.killEnemy(e, i);
     }
@@ -2131,17 +2133,11 @@ export class GameEngine {
           const enemy = this.enemies[eIdx];
           if (p.hitEnemyIds.has(enemy.id)) continue;
 
-          const dx = enemy.x - p.x;
-          if (dx > 32 || dx < -32) continue;
-          const dy = enemy.y - p.y;
-          if (dy > 32 || dy < -32) continue;
-
-          const hitR = enemy.radius + p.radius;
-          if (dx * dx + dy * dy < hitR * hitR) {
+          if (roundHitsEnemy(p.x, p.y, p.radius, enemy)) {
             p.hitEnemyIds.add(enemy.id);
 
             // Status vulnerability: cryo freeze and the Lance mark both amplify hits.
-            const finalDmg = Math.round(p.damage * this.statusDamageMultiplier(enemy));
+            const finalDmg = Math.round(p.damage * statusDamageMultiplier(enemy, this.player));
 
             enemy.hitFlashTimer = 0.08;
             this.damageEnemy(enemy, finalDmg, p.fromSkill ? 'skill' : 'weapon');
@@ -2389,24 +2385,12 @@ export class GameEngine {
       }
 
       // Player collision — either wing can be struck
-      let winged = false;
-      let contactX = 0;
-      let contactY = 0;
-      if (!despawn) {
-        const hitRadius = this.player.radius + ep.radius;
-        const hitSq = hitRadius * hitRadius;
-        const d1 = (wings.p1.x - ep.x) ** 2 + (wings.p1.y - ep.y) ** 2;
-        const d2 = (wings.p2.x - ep.x) ** 2 + (wings.p2.y - ep.y) ** 2;
-        if (d1 < hitSq) {
-          winged = true;
-          contactX = wings.p1.x;
-          contactY = wings.p1.y;
-        } else if (this.isPaired() && d2 < hitSq) {
-          winged = true;
-          contactX = wings.p2.x;
-          contactY = wings.p2.y;
-        }
-      }
+      const hit = despawn
+        ? null
+        : firstWingHit(ep.x, ep.y, ep.radius, wings, this.isPaired(), this.player.radius);
+      const winged = hit !== null;
+      const contactX = hit ? hit.x : 0;
+      const contactY = hit ? hit.y : 0;
 
       if (winged) {
         despawn = true;
@@ -2451,29 +2435,7 @@ export class GameEngine {
           });
           sound.playClick(true);
         } else if (this.player.invincibleTimer <= 0 && !this.devInvincible) {
-          const incomingDmg = ep.damage - this.soakWithTempShield(ep.damage);
-
-          if (incomingDmg > 0) {
-            this.player.hp -= incomingDmg;
-            this.player.timeSinceLastDamage = 0;
-            this.player.invincibleTimer = 0.4;
-            this.triggerScreenShake(7);
-            sound.playPlayerHit();
-
-            if (this.floatingTexts.length < 20) {
-              this.addFloatingText(contactX, contactY - 15, `-${incomingDmg}`, '#ff2255', true);
-            }
-
-            // Retaliation thorns trigger
-            if (this.player.retaliationThorns) {
-              this.triggerRetaliationThorns();
-            }
-
-            if (this.player.hp <= 0) {
-              this.handlePlayerDeath();
-              return;
-            }
-          }
+          if (this.applyPlayerDamage(ep.damage, contactX, contactY, 0.4, 7)) return;
         }
       }
 
@@ -2515,17 +2477,6 @@ export class GameEngine {
   }
 
   /**
-   * How much a status effect amplifies every hit on this enemy. Cryo freeze and
-   * Lance Kappa's mark stack, and both live here so nothing re-derives them.
-   */
-  private statusDamageMultiplier(e: Enemy): number {
-    let mult = 1;
-    if (e.frozenTimer && e.frozenTimer > 0) mult *= 1 + this.player.cryoVulnerability;
-    if (e.markedTimer && e.markedTimer > 0) mult *= 1.25;
-    return mult;
-  }
-
-  /**
    * The one door player damage goes through: it books the hit, records who dealt
    * it (the on-kill cards read that), and, while Siphon Eta's harvest is up,
    * converts a third of it back into health.
@@ -2554,6 +2505,43 @@ export class GameEngine {
     this.spawnImpactSparks(this.player.x, this.player.y, '#fda4af', 4);
     sound.playClick(true);
     return absorbed;
+  }
+
+  /**
+   * The one door contact and enemy fire go through. Path-specific shields are
+   * applied before this; soak, HP, i-frames, shake, damage text, thorns and
+   * death all happen here so the two hit paths cannot drift apart.
+   * Returns true when the hit ended the run.
+   */
+  private applyPlayerDamage(
+    amount: number,
+    x: number,
+    y: number,
+    invincibleSeconds: number,
+    shake: number
+  ): boolean {
+    const incoming = amount - this.soakWithTempShield(amount);
+    if (incoming <= 0) return false;
+
+    this.player.hp -= incoming;
+    this.player.timeSinceLastDamage = 0;
+    this.player.invincibleTimer = invincibleSeconds;
+    this.triggerScreenShake(shake);
+    sound.playPlayerHit();
+
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(x, y - 15, `-${incoming}`, '#ff2255', true);
+    }
+
+    if (this.player.retaliationThorns) {
+      this.triggerRetaliationThorns();
+    }
+
+    if (this.player.hp <= 0) {
+      this.handlePlayerDeath();
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -2600,7 +2588,7 @@ export class GameEngine {
         e.burnDps = Math.round(this.player.bulletDamage * 0.6);
         e.burnSource = source;
       }
-      this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)), source);
+      this.damageEnemy(e, Math.round(damage * statusDamageMultiplier(e, this.player)), source);
     }
   }
 
@@ -2690,7 +2678,7 @@ export class GameEngine {
 
       e.hitFlashTimer = 0.1;
       e.markedTimer = 4;
-      const hit = Math.round(rayDmg * this.statusDamageMultiplier(e));
+      const hit = Math.round(rayDmg * statusDamageMultiplier(e, this.player));
       this.damageEnemy(e, hit);
       if (this.floatingTexts.length < 20) {
         this.addFloatingText(e.x, e.y - 14, `${hit}`, '#818cf8', false);
@@ -2729,7 +2717,7 @@ export class GameEngine {
       if (Math.abs(rx * dirY - ry * dirX) > band + e.radius) continue;
 
       e.hitFlashTimer = 0.12;
-      const hit = Math.round(spearDmg * this.statusDamageMultiplier(e));
+      const hit = Math.round(spearDmg * statusDamageMultiplier(e, this.player));
       this.damageEnemy(e, hit, 'skill');
       e.x += dirX * 120;
       e.y += dirY * 120;
@@ -2782,7 +2770,7 @@ export class GameEngine {
       e.x += Math.cos(away) * 60;
       e.y += Math.sin(away) * 60;
       e.hitFlashTimer = 0.1;
-      this.damageEnemy(e, Math.round(dmg * this.statusDamageMultiplier(e)));
+      this.damageEnemy(e, Math.round(dmg * statusDamageMultiplier(e, this.player)));
     }
 
     this.triggerScreenShake(7);
@@ -3026,10 +3014,9 @@ export class GameEngine {
       e.rotation += e.rotSpeed * dt * currentSlow;
 
       // Player melee collision — either wing counts as a contact
-      const hitRadius = this.player.radius + e.radius;
-      const hitSq = hitRadius * hitRadius;
       const wingContact =
-        d1Sq < hitSq || (isTwin && d2Sq < hitSq);
+        circlesTouch(d1Sq, this.player.radius, e.radius) ||
+        (isTwin && circlesTouch(d2Sq, this.player.radius, e.radius));
       if (wingContact) {
         // Aegis Theta rams: whatever it touches eats kinetic damage on top of
         // whatever the contact costs the hull. Mid-charge it hits for 300% — and
@@ -3066,10 +3053,7 @@ export class GameEngine {
           });
           sound.playClick(true);
         } else if (this.player.invincibleTimer <= 0 && !this.devInvincible) {
-          let incomingDmg = e.damage;
-          if (this.player.droneShield) {
-            incomingDmg = Math.max(1, Math.round(incomingDmg * (1 - this.player.droneShieldReduction)));
-          }
+          let incomingDmg = afterDroneShield(e.damage, this.player);
           if (this.hasPilot('beta_phalanx')) {
             incomingDmg = Math.round(incomingDmg * 0.8);
             const bounceAngle = Math.atan2(e.y - this.player.y, e.x - this.player.x);
@@ -3080,28 +3064,7 @@ export class GameEngine {
             e.hitFlashTimer = 0.08;
           }
 
-          incomingDmg -= this.soakWithTempShield(incomingDmg);
-
-          if (incomingDmg > 0) {
-            this.player.hp -= incomingDmg;
-            this.player.timeSinceLastDamage = 0;
-            this.player.invincibleTimer = 0.45;
-            this.triggerScreenShake(8);
-            sound.playPlayerHit();
-
-            if (this.floatingTexts.length < 20) {
-              this.addFloatingText(this.player.x, this.player.y - 15, `-${incomingDmg}`, '#ff2255', true);
-            }
-
-            if (this.player.retaliationThorns) {
-              this.triggerRetaliationThorns();
-            }
-
-            if (this.player.hp <= 0) {
-              this.handlePlayerDeath();
-              return;
-            }
-          }
+          if (this.applyPlayerDamage(incomingDmg, this.player.x, this.player.y, 0.45, 8)) return;
         }
       }
     }

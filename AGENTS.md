@@ -44,6 +44,8 @@ src/
     engine/               编排层
       index.ts              全部游戏状态 + update 流水线
       enemyAi.ts            sniper / charger / boss 的决策状态机（纯逻辑，有单测）
+      collision.ts          玩家弹 / 敌弹 / 接触的命中判定（纯几何，有单测）
+      damage.ts             状态易伤与护盾减伤（纯算式，有单测）
     core/                 共享的模型与规则，引擎 / UI / 测试都读它
       types.ts              共享类型
       modes.ts              游戏模式描述表（模式差异的唯一来源）
@@ -85,7 +87,7 @@ src/
 
 **图鉴的逐级数值仍是手写散文**：`cards/codexData.ts` 的 `levels[].description` 里含绝对数值（如「冷却缩短至 3.2s」），不由 `cards/upgrades.ts` 的数值表推导。名称已经改成现查（`synergyLabel`），但**文案里的数字仍可能与数值表漂移**——改数值时必须回头对一遍文案，或者把文案也改成从表推导。
 
-- `engine/index.ts` 仍是大的编排类（2026-10 实测 3528 行，约占 `src/` 全部代码 1/4），碰撞与掉落都在里面。敌人 AI 已拆出第一刀：sniper / charger / boss 的决策状态机在 `engine/enemyAi.ts`（纯逻辑，有单测），索敌、分离与接触伤害仍留在循环里。文件内的 3 条分区横幅中，「SUMMONS & DRONES LOGIC」底下其实装着投射物、掉落与击杀。
+- `engine/index.ts` 仍是大的编排类（2026-10 实测 3543 行，约占 `src/` 全部代码 1/4），掉落与经验仍在里面。敌人 AI 已拆出（`engine/enemyAi.ts` 的决策状态机）；命中判定与玩家受伤入口已拆到 `engine/collision.ts` / `engine/damage.ts`，三者都是纯逻辑、有单测。索敌、分离、击杀与掉落仍留在循环里。文件内的 3 条分区横幅中，「SUMMONS & DRONES LOGIC」底下其实装着投射物、掉落与击杀。
 - 测试覆盖纯函数模块（数值表、换算、模式旋钮、算式）。**`engine/index.ts` 的循环现在有一条 headless 回归**（`__tests__/engineLoop.test.ts` + `headlessEngine.ts`）：用桩 canvas、桩时钟和固定种子的随机数驱动真实引擎，逐帧检查「无 NaN / 不出界 / 不破上限」，并断言击杀·伤害·等级只会单调上升、各召唤系统真的启动、同种子可复现。它**不比对具体数值**（那需要内嵌黄金轨迹），所以数值漂移仍要靠手感；`renderer.ts` 只有一条**结构性**测试（每个绘制步骤都被 `renderScene` 调用、pass 编号连续），不验证画面正确性。要盯着某一类敌人看时，用 dev 环境的**测试场**模式（标题界面最后一张模式卡）：不自动刷怪，右侧面板手动生成 1/5/20 只、清场、开关无敌；它在生产构建里会被过滤掉。
 - `PauseModal` 里还留着个别硬编码（如轨道炮「贯穿 5 敌」的 5）。无人机相关的算式已经收进 `game/systems/drones.ts` 共用，其余同类数字遇到就顺手收拢。
 

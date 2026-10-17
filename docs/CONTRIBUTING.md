@@ -24,6 +24,8 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 编排层       src/App.tsx               界面状态机，把引擎状态喂给 UI
               src/game/engine/index.ts 游戏状态 + update 流水线（2026-10 实测 3528 行，全仓最大的文件）
               src/game/engine/enemyAi.ts  sniper / charger / boss 的决策状态机（纯逻辑，有单测）
+              src/game/engine/collision.ts 玩家弹 / 敌弹 / 接触的命中判定（纯几何）
+              src/game/engine/damage.ts  状态易伤与护盾减伤（纯算式）
 共享层       src/game/core/            引擎 / UI / 测试都读的模型与规则
               types.ts（共享类型）/ modes.ts（模式表）/ pilots.ts（双机换算）
               player.ts（开局构造）/ enemyTypes.ts（敌人表 + 波次）
@@ -48,6 +50,8 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
 | `engine/index.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线 + 3 处子步（2b 溢流卡牌时钟 / 5b 射击回响与裂空光矛 / 7b 炮台·分身·友军）。主干：技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复 | 绘制细节（在 renderer）、数值表（在 core / cards） |
 | `engine/enemyAi.ts` | `stepEnemyAi`：sniper / charger / boss 三个状态机与通用追击。只写本帧速度、状态与「想发什么弹 / 想要什么音效」，由引擎落成弹体与音频 | 索敌（哪个翼更近）、分离、接触伤害、击杀与掉落（都在 `index.ts`） |
+| `engine/collision.ts` | `circlesTouch` / `roundHitsEnemy` / `firstWingHit`：玩家弹、敌弹、机体接触的命中判定 | 命中后的伤害、火花、击退（在 `index.ts`） |
+| `engine/damage.ts` | `statusDamageMultiplier`（冰缓易伤 × 标记易伤）与 `afterDroneShield` | 扣血、音效、震屏、死亡（在 `index.ts` 的 `applyPlayerDamage`） |
 | `render/renderer.ts` | `renderScene` 内的 17 个编号 pass（含超暴击全屏闪白、网格裁决的网格）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
 | `core/modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条、`manualSpawn` / `devOnly`）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
@@ -111,7 +115,7 @@ requestAnimationFrame
 | 双机编队规则、副机数值换算 | `game/core/pilots.ts` |
 | 无人机射速、弹道伤害算式 | `game/systems/drones.ts` |
 | 强化逐级数值（冷却/半径/阈值…） | `game/cards/upgrades.ts` 顶部的 `LVL_*` 表 |
-| 战斗流程、AI、碰撞、掉落 | `game/engine/`（决策状态机在 `enemyAi.ts`） |
+| 战斗流程、AI、碰撞、掉落 | `game/engine/`（决策在 `enemyAi.ts`，命中与伤害算式在 `collision.ts` / `damage.ts`） |
 | 画面表现 | `game/render/renderer.ts` |
 | 某个界面长什么样 | `components/` 下对应组件 |
 | 界面之间的流转 | `App.tsx` |
@@ -191,7 +195,7 @@ requestAnimationFrame
 
 1. **图鉴承诺了、引擎里没有的行为** —— 4 组：`cluster_bombs` 3 级「连锁破片殉爆」、`summon_railgun` 3 级「持续 1 秒的高温电浆裂隙」、`drone_missiles` 3 级「持续范围燃烧震波」、`drone_overclock` 的「无人机命中附加 20% 易伤 / 牺牲飞梭抵挡致命伤 / 12 秒自动重生」。目前这些等级只做到纯数值提升。补齐需要新增持续伤害区、替死判定、重生计时之类的系统——**是加功能，不是修 bug**；动手前先决定补齐还是收敛文案。
 2. **图鉴逐级文案里的数字是手写散文** —— `levels[].description` 的绝对数值不由 `cards/upgrades.ts` 的数值表推导，改数值时可能在文案里留下假的数字（已修过 fire_rate 的 250ms 基准、shield 的自愈数值、critical_core 的倍率上限、railgun 的 3.2s、nova 的 2.5s 共 5 处）。
-3. **`engine/index.ts` 仍是单体编排类** —— 敌人 AI 已拆出第一刀（sniper / charger / boss 的状态机在 `engine/enemyAi.ts`，索敌、分离与接触伤害仍在循环里），碰撞与掉落也仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`core/modes.ts`）、玩家构造（`core/player.ts`）、无人机算式（`systems/drones.ts`）做过拆分，后续若继续拆分，建议顺序：碰撞/伤害 → 掉落与经验。
+3. **`engine/index.ts` 仍是单体编排类** —— 敌人 AI 已拆出（`engine/enemyAi.ts`），命中判定与玩家受伤入口也已拆到 `engine/collision.ts` / `engine/damage.ts`；索敌、分离、击杀、掉落与经验仍在循环里。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`core/modes.ts`）、玩家构造（`core/player.ts`）、无人机算式（`systems/drones.ts`）做过拆分，后续若继续拆分，剩下的建议顺序：掉落与经验。
 4. **测试覆盖不全** —— 覆盖纯函数模块 + 渲染层结构检查 + 引擎循环的 headless 回归（`npm test`）。但 headless 回归只查形状不变量、不比对数值，渲染效果是否正确也无从断言，这两件事仍只能靠手玩。
 5. **`PauseModal` 残留硬编码** —— 如轨道炮「贯穿 5 敌」的 5 与引擎里的 `pierce: 5` 是两份。无人机算式已收进 `systems/drones.ts` 共用，同类数字遇到就顺手收拢。另外暂停菜单底部有一个 **无限刷新** 开关（`localStorage: geom_overload_infinite_reroll`）：它是测试开关，只让升级重抽不消耗次数，不改变任何玩法数值，默认关闭。
 6. **3× 倍速下单帧步长最大 0.24s** —— 位移约 63px/帧，极快的敌人理论上可能穿过碰撞判定。若要消除需引入子步进。
