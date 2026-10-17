@@ -32,8 +32,16 @@ export interface GameModeDef {
   pooledHp: boolean;
   /** Which card table the level-up hand is drawn from (see upgradePools.ts). */
   cardPool: 'standard' | 'overflow';
+  /**
+   * True for the sandbox: no wave ticks and no boss schedule. Every enemy on
+   * the field was placed by the test API, so nothing buries what you are
+   * watching.
+   */
+  manualSpawn: boolean;
+  /** Hidden from the title screen in a production build; dev server only. */
+  devOnly: boolean;
   /** UI hue token; the screens map it to Tailwind classes. */
-  accent: 'cyan' | 'fuchsia' | 'amber';
+  accent: 'cyan' | 'fuchsia' | 'amber' | 'emerald';
 }
 
 export const GAME_MODES: Record<GameMode, GameModeDef> = {
@@ -50,6 +58,8 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     threatScale: 0,
     pooledHp: false,
     cardPool: 'standard',
+    manualSpawn: false,
+    devOnly: false,
     accent: 'cyan',
   },
   twin_link: {
@@ -65,6 +75,8 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     threatScale: 0,
     pooledHp: true,
     cardPool: 'standard',
+    manualSpawn: false,
+    devOnly: false,
     accent: 'fuchsia',
   },
   overflow: {
@@ -81,7 +93,26 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     pooledHp: false,
     // The only mode with its own card table — the whole point of the mode.
     cardPool: 'overflow',
+    manualSpawn: false,
+    devOnly: false,
     accent: 'amber',
+  },
+  sandbox: {
+    id: 'sandbox',
+    name: '测试场',
+    tag: 'SANDBOX',
+    desc: '不自动刷怪。右侧面板自选敌人与数量、手动放置，可清场与开关无敌。仅开发环境可见。',
+    pilotSlots: 1,
+    wingSpacing: 0,
+    spawnMultiplier: 1,
+    maxAlive: 260,
+    growthScale: 1,
+    threatScale: 0,
+    pooledHp: false,
+    cardPool: 'standard',
+    manualSpawn: true,
+    devOnly: true,
+    accent: 'emerald',
   },
 };
 

@@ -15,14 +15,15 @@ npm test        # vitest run，纯函数模块的行为测试
 npm run preview # 预览构建产物
 ```
 
-测试覆盖不需要 canvas 的纯函数模块（数值表、属性换算、模式旋钮）。**`engine.ts` 的循环有一条 headless 回归**（`__tests__/engineLoop.test.ts`，驱动壳在 `headlessEngine.ts`）：桩 canvas + 桩时钟 + 固定种子，跑真实的刷怪 / AI / 碰撞 / 掉落 / 卡牌钩子 / 绘制 pass，逐帧查不变量并断言系统真的启动、计数器单调、同种子可复现。`renderer.ts` 另有一条**结构性**测试（`__tests__/renderer.test.ts`）。两者都**不验证画面或数值对不对**——改了引擎循环或渲染效果，仍然必须人肉玩一遍。
+测试覆盖不需要 canvas 的纯函数模块（数值表、属性换算、模式旋钮）。**`engine/index.ts` 的循环有一条 headless 回归**（`__tests__/engineLoop.test.ts`，驱动壳在 `headlessEngine.ts`）：桩 canvas + 桩时钟 + 固定种子，跑真实的刷怪 / AI / 碰撞 / 掉落 / 卡牌钩子 / 绘制 pass，逐帧查不变量并断言系统真的启动、计数器单调、同种子可复现。`renderer.ts` 另有一条**结构性**测试（`__tests__/renderer.test.ts`）。两者都**不验证画面或数值对不对**——改了引擎循环或渲染效果，仍然必须人肉玩一遍。
 
 ## 分层
 
 ```
 UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 编排层       src/App.tsx               界面状态机，把引擎状态喂给 UI
-              src/game/engine.ts       游戏状态 + update 流水线（2026-10 实测 3624 行，全仓最大的文件）
+              src/game/engine/index.ts 游戏状态 + update 流水线（2026-10 实测 3528 行，全仓最大的文件）
+              src/game/engine/enemyAi.ts  sniper / charger / boss 的决策状态机（纯逻辑，有单测）
 共享层       src/game/core/            引擎 / UI / 测试都读的模型与规则
               types.ts（共享类型）/ modes.ts（模式表）/ pilots.ts（双机换算）
               player.ts（开局构造）/ enemyTypes.ts（敌人表 + 波次）
@@ -38,20 +39,21 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 测试         src/game/__tests__/*.test.ts 纯函数模块的行为测试（与源码分开放）
 ```
 
-**找文件的口诀**：根目录只有 `engine.ts`；「什么都读的」进 `core/`，「关于卡牌的」进 `cards/`，「某一张卡的算式」进 `systems/`，「画面」进 `render/`，「和玩法无关的工具」进 `infra/`。
+**找文件的口诀**：`engine/` 里只有编排类 `index.ts` 和已拆出的 `enemyAi.ts`；「什么都读的」进 `core/`，「关于卡牌的」进 `cards/`，「某一张卡的算式」进 `systems/`，「画面」进 `render/`，「和玩法无关的工具」进 `infra/`。
 
 ### 各文件职责
 
 | 文件 | 职责 | 不该放什么 |
 |---|---|---|
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
-| `engine.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线 + 3 处子步（2b 溢流卡牌时钟 / 5b 射击回响与裂空光矛 / 7b 炮台·分身·友军）。主干：技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复 | 绘制细节（在 renderer）、数值表（在 core / cards） |
+| `engine/index.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线 + 3 处子步（2b 溢流卡牌时钟 / 5b 射击回响与裂空光矛 / 7b 炮台·分身·友军）。主干：技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复 | 绘制细节（在 renderer）、数值表（在 core / cards） |
+| `engine/enemyAi.ts` | `stepEnemyAi`：sniper / charger / boss 三个状态机与通用追击。只写本帧速度、状态与「想发什么弹 / 想要什么音效」，由引擎落成弹体与音频 | 索敌（哪个翼更近）、分离、接触伤害、击杀与掉落（都在 `index.ts`） |
 | `render/renderer.ts` | `renderScene` 内的 17 个编号 pass（含超暴击全屏闪白、网格裁决的网格）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
-| `core/modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
+| `core/modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条、`manualSpawn` / `devOnly`）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
 | `characters/index.ts` | 聚合 `CHARACTERS`、`getCharacterDef`、`drawCharacterShip` | 具体数值 |
 | `characters/shipDraw.ts` | 机体绘制共用画笔：`strokeUnit`、`drawNoseCone` | 单个机体的造型 |
-| `core/enemyTypes.ts` | 7 种敌人（含 Boss）的数值表 + 按时间分档的波次权重表 + `enemyHpFor` | 具名刷怪逻辑（在 `engine.ts`） |
+| `core/enemyTypes.ts` | 7 种敌人（含 Boss）的数值表 + 按时间分档的波次权重表 + `enemyHpFor` | 具名刷怪逻辑（在 `engine/index.ts`） |
 | `cards/upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 `cards/codexData.ts`） |
 | `cards/overflowUpgrades.ts` | 溢流模式专属卡池 25 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 `core/modes.ts`） |
 | `cards/upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
@@ -85,6 +87,15 @@ requestAnimationFrame
 - 副机不是第二份 `player`：它用自己的机体基础属性 + 本次强化增量换算，见 `getPilotWeaponStats(player, 1)`。强化对两机同时生效，但这个换算是唯一的真值来源。
 - 模式差异一律从 `core/modes.ts` 读，不要在别处写 `mode === 'twin_link'`。
 
+## 测试场（Sandbox）
+
+`GAME_MODES.sandbox` 是人工验证用的模式，只在 `npm run dev` 的标题界面出现（`devOnly`），生产构建里被过滤掉：
+
+- `manualSpawn: true`：引擎跳过普通刷怪与 Boss 排程，场上只会有手动放置的敌人。
+- 右侧面板（`components/SandboxPanel.tsx`）按类型生成 1 / 5 / 20 只，敌人环绕机体 330px 生成；面板还能开无敌、清场（连同敌弹与掉落）。
+- 引擎 API 都带模式守卫，在真实模式里是空操作：`spawnTestEnemies(type, count)` / `clearTestField()` / `setDevInvincible(on)`；每次 `startNewGame` 都会把无敌关掉。
+- 回归在 `__tests__/sandbox.test.ts`：不自动刷怪、按类型计数生成、真实模式里 API 无效、无敌挡伤且关掉后照常掉血。
+
 ## 常见修改任务
 
 ### 改动落在哪个文件（速查）
@@ -100,7 +111,7 @@ requestAnimationFrame
 | 双机编队规则、副机数值换算 | `game/core/pilots.ts` |
 | 无人机射速、弹道伤害算式 | `game/systems/drones.ts` |
 | 强化逐级数值（冷却/半径/阈值…） | `game/cards/upgrades.ts` 顶部的 `LVL_*` 表 |
-| 战斗流程、AI、碰撞、掉落 | `game/engine.ts` |
+| 战斗流程、AI、碰撞、掉落 | `game/engine/`（决策状态机在 `enemyAi.ts`） |
 | 画面表现 | `game/render/renderer.ts` |
 | 某个界面长什么样 | `components/` 下对应组件 |
 | 界面之间的流转 | `App.tsx` |
@@ -114,7 +125,7 @@ requestAnimationFrame
 2. `game/characters/<新机体>.ts`：新建一个文件，导出 `export const xxx: CharacterDef`（基础属性、被动、主动技）**和**它自己的 `export function drawXxx(ctx, radius, angle, time)`，照现有文件抄结构
 3. `game/characters/index.ts`：把 def 加进 `CHARACTERS`、把绘制函数加进 `SHIP_DRAWERS`
 4. `game/__tests__/characters.test.ts`：把新 id 加进 `EXPECTED_IDS`（数组顺序就是选人界面的排序）
-5. ⚠️ **行为**：主动技要在 `engine.ts` 的 `executeCharSkill` 里加一个 `if (charId === '...')` 分支；被动要用 `this.hasPilot('...')` 在引擎里判定（双子模式下任一侧搭载即生效）。被动若需要新状态，把字段加进 `core/types.ts` 的 `Player`，基值写在 `core/player.ts`
+5. ⚠️ **行为**：主动技要在 `engine/index.ts` 的 `executeCharSkill` 里加一个 `if (charId === '...')` 分支；被动要用 `this.hasPilot('...')` 在引擎里判定（双子模式下任一侧搭载即生效）。被动若需要新状态，把字段加进 `core/types.ts` 的 `Player`，基值写在 `core/player.ts`
 6. ⚠️ **不要复用共享的 `isSkillActive` 计时器来记一次性的时长**：`player.skillMaxDuration` 取两台机体的较大值，与 δ/γ 组队时会把你的 buff 拉长。要精确时长就自己开一个字段（参考 `chargeTimer`）
 7. ⚠️ 若该机体在 `cards/codexData.ts` 里有专属解说（机体目前没有，强化有），记得同步——那里有双份真值
 
@@ -126,7 +137,7 @@ requestAnimationFrame
 模式差异已经收拢在 `game/core/modes.ts` 的 `GAME_MODES` 表里，**旋钮部分只需要加一行**。剩下的只有"表现"部分需要动代码（这部分无法数据化）：
 
 1. `game/core/types.ts`：`GameMode` 联合类型加一项
-2. `game/core/modes.ts`：`GAME_MODES` 加一行（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条、名称文案、强调色）。引擎、`core/player.ts`、HUD、选人界面、开始界面全部自动读表
+2. `game/core/modes.ts`：`GAME_MODES` 加一行（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条、名称文案、强调色；`manualSpawn` / `devOnly` 保持 `false`，除非它就是测试场）。引擎、`core/player.ts`、HUD、选人界面、开始界面全部自动读表
 3. `game/__tests__/modes.test.ts`：新模式的旋钮断言（表里的 `it('keeps every tuning knob in a sane range')` 会自动覆盖）
 4. 只有当新模式需要**专属画面**时才动渲染层：给 `RenderState` 加字段（`renderer.ts` 不判断模式字符串）
 5. 表现层按需：`components/StartScreen.tsx` 的模式卡是 map 出来的，加一行数据即可（新强调色要在 `ACCENT_CLASSES` 里补一条）；`components/CharacterSelectScreen.tsx` 的双槽选人、`components/{HUD,PauseModal,GameOverModal}.tsx` 的模式展示位
@@ -161,11 +172,11 @@ requestAnimationFrame
 ### 加一种敌人
 1. `core/types.ts` 的 `EnemyType` 联合类型加一项
 2. `core/enemyTypes.ts` 的 `ENEMY_TYPES` 加一行，必要时加进 `SPAWN_BRACKETS`
-3. `engine.ts` 的 `updateEnemies` 若需专属 AI，加状态机分支（其他敌人走通用追击）
+3. `engine/enemyAi.ts` 的 `stepEnemyAi` 若需专属 AI，加状态机分支（其他敌人走通用追击），并在 `__tests__/enemyAi.test.ts` 补状态转换测试
 4. 渲染按 `sides`/颜色自动适配，一般不用改
 
 ### 调平衡
-数值全部在数据层，不要在 `engine.ts` 里写魔法数。双子模式的成长系数是 `game/core/modes.ts` 里 `GAME_MODES.twin_link.growthScale`。
+数值全部在数据层，不要在 `engine/index.ts` 里写魔法数。双子模式的成长系数是 `game/core/modes.ts` 里 `GAME_MODES.twin_link.growthScale`。
 
 ## 提交前检查
 
@@ -180,7 +191,7 @@ requestAnimationFrame
 
 1. **图鉴承诺了、引擎里没有的行为** —— 4 组：`cluster_bombs` 3 级「连锁破片殉爆」、`summon_railgun` 3 级「持续 1 秒的高温电浆裂隙」、`drone_missiles` 3 级「持续范围燃烧震波」、`drone_overclock` 的「无人机命中附加 20% 易伤 / 牺牲飞梭抵挡致命伤 / 12 秒自动重生」。目前这些等级只做到纯数值提升。补齐需要新增持续伤害区、替死判定、重生计时之类的系统——**是加功能，不是修 bug**；动手前先决定补齐还是收敛文案。
 2. **图鉴逐级文案里的数字是手写散文** —— `levels[].description` 的绝对数值不由 `cards/upgrades.ts` 的数值表推导，改数值时可能在文案里留下假的数字（已修过 fire_rate 的 250ms 基准、shield 的自愈数值、critical_core 的倍率上限、railgun 的 3.2s、nova 的 2.5s 共 5 处）。
-3. **`engine.ts` 仍是单体编排类** —— 敌人 AI 状态机、碰撞、掉落仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`core/modes.ts`）、玩家构造（`core/player.ts`）、无人机算式（`systems/drones.ts`）做过拆分，后续若继续拆分，建议顺序：敌人 AI → 碰撞/伤害 → 掉落与经验。
+3. **`engine/index.ts` 仍是单体编排类** —— 敌人 AI 已拆出第一刀（sniper / charger / boss 的状态机在 `engine/enemyAi.ts`，索敌、分离与接触伤害仍在循环里），碰撞与掉落也仍在其中。已在渲染层（`render/renderer.ts`）、机体数据（`characters/`）、模式旋钮（`core/modes.ts`）、玩家构造（`core/player.ts`）、无人机算式（`systems/drones.ts`）做过拆分，后续若继续拆分，建议顺序：碰撞/伤害 → 掉落与经验。
 4. **测试覆盖不全** —— 覆盖纯函数模块 + 渲染层结构检查 + 引擎循环的 headless 回归（`npm test`）。但 headless 回归只查形状不变量、不比对数值，渲染效果是否正确也无从断言，这两件事仍只能靠手玩。
 5. **`PauseModal` 残留硬编码** —— 如轨道炮「贯穿 5 敌」的 5 与引擎里的 `pierce: 5` 是两份。无人机算式已收进 `systems/drones.ts` 共用，同类数字遇到就顺手收拢。另外暂停菜单底部有一个 **无限刷新** 开关（`localStorage: geom_overload_infinite_reroll`）：它是测试开关，只让升级重抽不消耗次数，不改变任何玩法数值，默认关闭。
 6. **3× 倍速下单帧步长最大 0.24s** —— 位移约 63px/帧，极快的敌人理论上可能穿过碰撞判定。若要消除需引入子步进。

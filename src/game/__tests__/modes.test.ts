@@ -66,11 +66,23 @@ describe('game mode table', () => {
     }
   });
 
+  it('keeps the sandbox manual and hidden from production builds', () => {
+    expect(GAME_MODES.sandbox.manualSpawn).toBe(true);
+    expect(GAME_MODES.sandbox.devOnly).toBe(true);
+
+    for (const [key, def] of Object.entries(GAME_MODES)) {
+      if (key === 'sandbox') continue;
+      expect(def.manualSpawn, key).toBe(false);
+      expect(def.devOnly, key).toBe(false);
+    }
+  });
+
   it('falls back to the standard run for an unknown mode id', () => {
     expect(modeOf(undefined)).toBe(GAME_MODES.standard);
     expect(modeOf('standard')).toBe(GAME_MODES.standard);
     expect(modeOf('twin_link')).toBe(GAME_MODES.twin_link);
     expect(modeOf('overflow')).toBe(GAME_MODES.overflow);
+    expect(modeOf('sandbox')).toBe(GAME_MODES.sandbox);
   });
 });
 
@@ -100,6 +112,7 @@ describe('modeOfPlayer', () => {
     expect(modeOfPlayer({ gameMode: 'overflow', twinPilotId: 'gamma_viper' })).toBe(
       GAME_MODES.overflow
     );
+    expect(modeOfPlayer({ gameMode: 'sandbox' })).toBe(GAME_MODES.sandbox);
   });
 });
 

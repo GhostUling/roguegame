@@ -80,7 +80,7 @@ export interface Drone {
   lastMissileTime?: number;
 }
 
-export type GameMode = 'standard' | 'twin_link' | 'overflow';
+export type GameMode = 'standard' | 'twin_link' | 'overflow' | 'sandbox';
 
 export interface Player {
   characterId: CharacterId;

@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/engine';
 import { sound } from './game/infra/audio';
-import { Player, UpgradeOption, GameStats, CharacterId, GameMode } from './game/core/types';
+import { Player, UpgradeOption, GameStats, CharacterId, GameMode, EnemyType } from './game/core/types';
 import { getRandomUpgrades } from './game/cards/upgrades';
 import { poolForMode } from './game/cards/upgradePools';
 import { modeForPilots, modeOfPlayer } from './game/core/modes';
@@ -17,6 +17,7 @@ import { PauseModal } from './components/PauseModal';
 import { StartScreen } from './components/StartScreen';
 import { CharacterSelectScreen } from './components/CharacterSelectScreen';
 import { CodexModal } from './components/CodexModal';
+import { SandboxPanel } from './components/SandboxPanel';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -59,6 +60,8 @@ export default function App() {
   });
   const [timeScale, setTimeScale] = useState<number>(1);
   const [controlMode, setControlMode] = useState<'keys' | 'mouse'>('keys');
+  /** Sandbox only; reset with every new run so it can never leak into a real one. */
+  const [devInvincible, setDevInvincible] = useState<boolean>(false);
 
   // Initialize Canvas & Game Engine
   useEffect(() => {
@@ -194,6 +197,7 @@ export default function App() {
       setSelectedCharacterId(charId);
       setGameMode(mode);
       setTwinPilotId(twinId || null);
+      setDevInvincible(false);
       upgradeLevelsRef.current = initialUpgrades;
       setUpgradeLevels(initialUpgrades);
       setEndStats(null);
@@ -247,6 +251,22 @@ export default function App() {
     if (engineRef.current) {
       engineRef.current.triggerActiveSkill();
     }
+  }, []);
+
+  const handleSpawnTestEnemies = useCallback((type: EnemyType, count: number) => {
+    engineRef.current?.spawnTestEnemies(type, count);
+  }, []);
+
+  const handleClearTestField = useCallback(() => {
+    engineRef.current?.clearTestField();
+  }, []);
+
+  const handleToggleDevInvincible = useCallback(() => {
+    setDevInvincible((prev) => {
+      const next = !prev;
+      engineRef.current?.setDevInvincible(next);
+      return next;
+    });
   }, []);
 
   const handleReroll = useCallback(() => {
@@ -323,6 +343,16 @@ export default function App() {
           onTriggerSkill={handleTriggerSkill}
           onChangeTimeScale={handleChangeTimeScale}
           onToggleControlMode={handleToggleControlMode}
+        />
+      )}
+
+      {/* Sandbox-only manual spawner */}
+      {gameState === 'playing' && gameMode === 'sandbox' && playerState && (
+        <SandboxPanel
+          invincible={devInvincible}
+          onSpawn={handleSpawnTestEnemies}
+          onClear={handleClearTestField}
+          onToggleInvincible={handleToggleDevInvincible}
         />
       )}
 

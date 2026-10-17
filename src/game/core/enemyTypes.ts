@@ -4,6 +4,8 @@ import { EnemyType } from './types';
 export type SpawnableEnemyType = Exclude<EnemyType, 'boss'>;
 
 export interface EnemyTypeDef {
+  /** Short label for the sandbox panel. */
+  nameZh: string;
   /** Base hit points before the per-minute growth curve is applied. */
   hp: number;
   /** Fraction of base HP added per two minutes of elapsed run time. */
@@ -33,6 +35,7 @@ export interface EnemyTypeDef {
  */
 export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
   chaser: {
+    nameZh: '追击者',
     hp: 40,
     hpGrowthPerMin: 0.7,
     damageGrowthPerMin: 0.1,
@@ -46,6 +49,7 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
     expValue: 1,
   },
   speeder: {
+    nameZh: '疾行者',
     hp: 22,
     hpGrowthPerMin: 0.7,
     damageGrowthPerMin: 0.08,
@@ -59,6 +63,7 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
     expValue: 1,
   },
   tank: {
+    nameZh: '重装者',
     hp: 120,
     hpGrowthPerMin: 0.7,
     damageGrowthPerMin: 0.14,
@@ -72,6 +77,7 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
     expValue: 3,
   },
   sniper: {
+    nameZh: '狙击手',
     hp: 35,
     hpGrowthPerMin: 0.7,
     damageGrowthPerMin: 0.12,
@@ -85,6 +91,7 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
     expValue: 2,
   },
   charger: {
+    nameZh: '冲锋角',
     hp: 50,
     hpGrowthPerMin: 0.7,
     damageGrowthPerMin: 0.12,
@@ -98,6 +105,7 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
     expValue: 2,
   },
   hive: {
+    nameZh: '裂殖母巢',
     hp: 85,
     hpGrowthPerMin: 0.7,
     damageGrowthPerMin: 0.09,
@@ -111,6 +119,7 @@ export const ENEMY_TYPES: Record<EnemyType, EnemyTypeDef> = {
     expValue: 4,
   },
   boss: {
+    nameZh: '星型统领',
     hp: 850,
     hpGrowthPerMin: 0.9,
     damageGrowthPerMin: 0.1,

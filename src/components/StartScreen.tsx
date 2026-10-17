@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { sound } from '../game/infra/audio';
 import { GameMode } from '../game/core/types';
 import { GAME_MODES } from '../game/core/modes';
-import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame } from 'lucide-react';
+import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame, FlaskConical } from 'lucide-react';
 
 /** Tailwind classes per mode accent; the mode table only carries the token. */
 const ACCENT_CLASSES = {
@@ -20,6 +20,11 @@ const ACCENT_CLASSES = {
     card: 'border-amber-400 shadow-[0_0_22px_rgba(251,191,36,0.22)]',
     label: 'text-amber-300',
     icon: Flame,
+  },
+  emerald: {
+    card: 'border-emerald-400 shadow-[0_0_22px_rgba(52,211,153,0.22)]',
+    label: 'text-emerald-300',
+    icon: FlaskConical,
   },
 } as const;
 
@@ -108,7 +113,9 @@ export const StartScreen: React.FC<StartScreenProps> = ({
             作战模式 // BATTLE MODE
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            {Object.values(GAME_MODES).map((m) => {
+            {Object.values(GAME_MODES)
+              .filter((m) => !m.devOnly || import.meta.env.DEV)
+              .map((m) => {
               const accent = ACCENT_CLASSES[m.accent];
               const ModeIcon = accent.icon;
               const active = mode === m.id;
