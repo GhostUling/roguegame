@@ -90,6 +90,8 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   // 9. Draw Enemy Projectiles
   renderEnemyProjectiles(ctx, frame);
 
+  // 10. Draw Player Projectiles (high-performance neon beam)
+  renderProjectiles(ctx, frame);
 
   // 11. Draw Energy Lances & Rays
   renderBeams(ctx, frame);
