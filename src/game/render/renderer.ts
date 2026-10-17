@@ -14,6 +14,8 @@ import {
   Turret,
   Clone,
   Ally,
+  Lance,
+  Rift,
 } from '../types';
 import { drawCharacterShip, getCharacterDef } from '../characters';
 import { drawResonanceArc } from '../resonanceArc';
@@ -22,6 +24,7 @@ import { isPaired } from '../modes';
 import { TURRET_FADE } from '../turrets';
 import { GRID_CELL, GRID_FLASH } from '../gridVerdict';
 import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
+import { LANCE_LENGTH, RIFT_SPACING, riftBranch } from '../riftLance';
 
 /**
  * Everything the renderer reads. GameEngine satisfies this shape structurally, so
@@ -43,6 +46,8 @@ export interface RenderState {
   turrets: Turret[];
   clones: Clone[];
   allies: Ally[];
+  lances: Lance[];
+  rifts: Rift[];
   width: number;
   height: number;
   pulseAnimTime: number;
@@ -69,8 +74,9 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   // 3. Draw Shockwaves
   renderShockwaves(ctx, frame);
 
-  // 4. Draw Primed Melt Cores (ground hazard, under everything that moves)
+  // 4. Draw Ground Hazards (melt cores and rift seams, under everything that moves)
   renderMeltCores(ctx, frame);
+  renderRifts(ctx, frame);
 
   // 5. Draw Drop Gems
   renderGems(ctx, frame);
@@ -93,7 +99,8 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
   // 10. Draw Player Projectiles (high-performance neon beam)
   renderProjectiles(ctx, frame);
 
-  // 11. Draw Energy Lances & Rays
+  // 11. Draw Thrown Lances & Energy Rays
+  renderLances(ctx, frame);
   renderBeams(ctx, frame);
 
   // 12. Draw Player
@@ -158,6 +165,116 @@ export function renderGridVerdict(ctx: CanvasRenderingContext2D, frame: RenderSt
   ctx.strokeStyle = '#e9d5ff';
   ctx.lineWidth = 0.75;
   ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * The seam a Rift Lance tore: a crack in the floor, not a streak in the air.
+ *
+ * Each node runs *along* the travel direction and is drawn wider than the gap
+ * between nodes, so consecutive nodes join into one continuous fracture instead
+ * of a comb of ticks. A dark core under a bright rim is what makes it read as a
+ * hole in the ground rather than light lying on top of it, and stable offshoots
+ * (derived from the node id) give it the branching a crack should have.
+ */
+export function renderRifts(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (frame.rifts.length === 0) return;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  for (const r of frame.rifts) {
+    const fade = 1 - r.life / r.maxLife;
+    const along = RIFT_SPACING * 1.8;
+    const branch = riftBranch(r.id);
+
+    ctx.save();
+    ctx.translate(r.x, r.y);
+    ctx.rotate(r.angle);
+
+    // The gash itself: a dark core, so it looks cut into the field rather than
+    // lit on top of it. Width is what makes it read as a tear and not a scratch.
+    ctx.globalAlpha = fade * 0.9;
+    ctx.strokeStyle = 'rgba(18, 3, 32, 0.95)';
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(-along / 2, 0);
+    ctx.lineTo(along / 2, 0);
+    ctx.stroke();
+
+    // Bright rims, split either side of the core so the cut has two edges.
+    ctx.globalAlpha = fade * 0.85;
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(-along / 2, -5);
+    ctx.lineTo(along / 2, -5);
+    ctx.moveTo(-along / 2, 5);
+    ctx.lineTo(along / 2, 5);
+    ctx.stroke();
+
+    // One stable offshoot per node, so the fracture branches as it runs.
+    ctx.globalAlpha = fade * 0.6;
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(branch.angle) * branch.length, Math.sin(branch.angle) * branch.length);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * A thrown Rift Lance, and deliberately nothing else: no streak, no afterimage.
+ * The seam it gouges into the floor is the whole trace of its flight.
+ */
+export function renderLances(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (frame.lances.length === 0) return;
+
+  ctx.save();
+
+  for (const l of frame.lances) {
+    ctx.save();
+    ctx.translate(l.x, l.y);
+    ctx.rotate(l.angle);
+
+    // A soft aura drawn *on* the head gives the spear mass. It sits at the spear
+    // rather than behind it, so it reads as weight, not as a motion trail.
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(getGlowSprite('#a855f7', true), -32, -32);
+
+    // Long, thick and narrow-headed: still unmistakably a spear in a single
+    // frame at full speed.
+    const back = -LANCE_LENGTH * 0.4;
+    const halfWidth = 11;
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.moveTo(LANCE_LENGTH, 0);
+    ctx.lineTo(0, -halfWidth);
+    ctx.lineTo(back, 0);
+    ctx.lineTo(0, halfWidth);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.55)';
+    ctx.fill();
+    ctx.strokeStyle = '#c084fc';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // The spine: white-hot, so the eye catches the tip as it crosses.
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(LANCE_LENGTH * 0.95, 0);
+    ctx.lineTo(back, 0);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 

@@ -3,6 +3,8 @@ import { MAX_TURRETS, TURRET_LIFETIME } from './turrets';
 import { GRID_CELL, GRID_STUN } from './gridVerdict';
 import { CLONE_LIFETIME, MAX_CLONES } from './clones';
 import { MAX_ALLIES, ALLY_LIFETIME } from './allies';
+import { MAX_PENDING_ECHOES } from './shotEcho';
+import { RIFT_TICK_SECONDS } from './riftLance';
 
 /**
  * The Overflow card pool. Deliberately its own table, never merged into
@@ -41,6 +43,12 @@ const LVL_GRID_DAMAGE = [2.0, 3.0];
 const LVL_CLONE_INTERVAL = [40, 30, 20];
 const LVL_CLONE_DAMAGE = [0.5, 0.6, 0.7];
 const LVL_NECRO_CHANCE = [0.25, 0.35, 0.5];
+const LVL_ECHO_DELAY = [0.35, 0.3, 0.25];
+const LVL_ECHO_DAMAGE = [0.3, 0.4, 0.5];
+const LVL_SKILL_REFUND = [0.15, 0.25, 0.4];
+const LVL_LANCE_INTERVAL = [6, 4.5, 3];
+const LVL_LANCE_DAMAGE = [2.5, 3, 3.5];
+const LVL_RIFT_DAMAGE = [0.22, 0.28, 0.34];
 
 /** Damage scale the Overflow cards apply to their own secondary payloads. */
 const OMNI_DAMAGE_SCALE = 0.6;
@@ -309,6 +317,56 @@ export const OVERFLOW_UPGRADES: UpgradeDefinition[] = [
       `暴击有 ${pct(atLevel(LVL_HYPERCRIT, lvl))} 几率升级为 ×${HYPERCRIT_MULTIPLIER} 超暴击`,
     apply: (p, lvl) => {
       p.hypercritChance = atLevel(LVL_HYPERCRIT, lvl);
+    },
+  },
+
+  {
+    id: 'overclock_protocol',
+    key: 'overclock_protocol',
+    name: 'Overclock Protocol',
+    nameZh: '超频协议',
+    desc: '把每次击杀回灌进技能回路：杀得越密，主动技回得越快。但技能自己打死的、以及友军打死的都不算——否则它会自己续自己。',
+    category: 'tactical',
+    rarity: 'epic',
+    maxLevel: 3,
+    statDiffText: (_p, lvl = 1) =>
+      `每次武器击杀减少主动技冷却 ${atLevel(LVL_SKILL_REFUND, lvl)}s（技能/友军击杀不算）`,
+    apply: (p, lvl) => {
+      p.skillRefundPerKill = atLevel(LVL_SKILL_REFUND, lvl);
+    },
+  },
+  {
+    id: 'shot_echo',
+    key: 'shot_echo',
+    name: 'Shot Echo',
+    nameZh: '射击回响',
+    desc: '每一次射击都会在片刻之后于原地重放一次。你打出去的那一波，会自己再来一波。',
+    category: 'ballistic',
+    rarity: 'epic',
+    maxLevel: 3,
+    statDiffText: (_p, lvl = 1) =>
+      `射击在 ${atLevel(LVL_ECHO_DELAY, lvl)}s 后原地重放 · 重放弹伤害 ×${atLevel(LVL_ECHO_DAMAGE, lvl).toFixed(1)} · 同时最多 ${MAX_PENDING_ECHOES} 波`,
+    apply: (p, lvl) => {
+      p.echoDelay = atLevel(LVL_ECHO_DELAY, lvl);
+      p.echoDamageScale = atLevel(LVL_ECHO_DAMAGE, lvl);
+    },
+  },
+  {
+    id: 'rift_lance',
+    key: 'rift_lance',
+    name: 'Rift Lance',
+    nameZh: '裂空光矛',
+    desc: `甩出一根贯穿战场的长矛。矛身撕开的裂痕会短暂留在原地，把经过的小怪持续切开——裂痕不伤 BOSS。`,
+    category: 'energy',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (_p, lvl = 1) =>
+      `每 ${atLevel(LVL_LANCE_INTERVAL, lvl)}s 掷出一矛 · 矛伤 ×${atLevel(LVL_LANCE_DAMAGE, lvl).toFixed(1)} · 裂痕每 ${RIFT_TICK_SECONDS}s 切 ×${atLevel(LVL_RIFT_DAMAGE, lvl).toFixed(2)}（不伤 BOSS）`,
+    apply: (p, lvl) => {
+      p.lanceInterval = atLevel(LVL_LANCE_INTERVAL, lvl);
+      p.lanceTimer = atLevel(LVL_LANCE_INTERVAL, lvl);
+      p.lanceDamageScale = atLevel(LVL_LANCE_DAMAGE, lvl);
+      p.riftDamageScale = atLevel(LVL_RIFT_DAMAGE, lvl);
     },
   },
 

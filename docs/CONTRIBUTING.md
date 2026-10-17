@@ -49,7 +49,7 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | `upgrades.ts` | 标准池 25 条强化：文案、稀有度、`apply(player)`、上限；`atLevel` 逐级取值也被溢流池共用 | 图鉴的额外解说（在 codexData） |
 | `overflowUpgrades.ts` | 溢流模式专属卡池 18 张。独立表，`key` 必须与标准池全局唯一（共用一个 `upgradeLevels`）；数值故意不讲等价 | 模式判定（在 modes） |
 | `upgradePools.ts` | `poolForMode`（按模式取卡表）、`EVERY_UPGRADE` / `findUpgrade`（跨池查表，仅供展示） | 卡牌数值本身 |
-| `turrets.ts` / `gridVerdict.ts` / `clones.ts` / `allies.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、友军属性推导），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
+| `turrets.ts` / `gridVerdict.ts` / `clones.ts` / `allies.ts` / `shotEcho.ts` / `riftLance.ts` | 新系统卡的纯数值与算式（炮台伤害、格距、分身站位、友军属性推导、重放弹伤害、裂痕沿路径采样），引擎与卡面共用一份 | 部署时机、逐帧状态（在 engine） |
 | `render/friendlyMarker.ts` | 我方单位的统一标记（色值 / 环距 / 线宽 / `drawFriendlyMarker`），炮台、分身、友军三处渲染共用 | 各单位自身的造型 |
 | `player.ts` | `createPlayer`：把选定机体（单机或双机）折算成初始 `Player` | 逐帧状态变更 |
 | `pilots.ts` | `hasPilot` / `getTwinPositions` / `getPilotWeaponStats` | 引擎状态读写、模式判定（在 modes） |
@@ -149,6 +149,8 @@ requestAnimationFrame
 5. **绘制不开 `shadowBlur`、不在循环里建渐变**，走 `getGlowSprite` 缓存或纯描边；新增可见物要给 `RenderState` 加字段，渲染层不判断模式字符串。
 6. 需要冻结/时停时，读 `player.freezeTimer` 的那一段（`worldFrozen`）而不是另起一套。**统一约定**：`worldFrozen` 只冻结敌群（刷怪 / 移动 / 敌方子弹），玩家自己的一切（机体、炮台、分身、友军、轨道弹）照常运转。
 7. **我方单位必须带 `drawFriendlyMarker`**（`render/friendlyMarker.ts`）：同一枚环 + 尖角，敌人一律不带。新增我方单位时不要自己画一套识别记号。
+8. **"击杀触发"的卡必须尊重伤害来源标记**（`types.ts` 的 `DamageSource`）。`damageEnemy(e, amount, source)` 默认 `'weapon'`，技能自己的伤害源要显式传 `'skill'`（否则技能会自己续自己），友军传 `'ally'`，`killEnemy` 只对 `'weapon'` 结算。**绕过 `damageEnemy` 直接扣血的写法（`e.hp -= x`）必须紧跟一行 `e.lastDamageSource = ...`**，否则会沿用上一个来源标记，把归属算错。
+9. **替换普攻形态的卡要先在 260 只怪的画面里验证**。「轨道囚笼」就是在这里翻车的：它拿掉直线弹换成一颗贴着机身的光点，玩家看到的是"武器坏了"。凡是要拿走玩家现有输出手段的卡，先确认替换物在第一眼就讀得出来是武器。
 
 ### 加一种敌人
 1. `types.ts` 的 `EnemyType` 联合类型加一项

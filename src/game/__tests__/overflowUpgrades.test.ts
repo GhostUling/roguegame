@@ -86,6 +86,9 @@ describe('every overflow level does something', () => {
       'grid_verdict',
       'mirror_self',
       'necro_fleet',
+      'overclock_protocol',
+      'shot_echo',
+      'rift_lance',
     ];
     for (const key of tableDriven) {
       const def = findUpgrade(key);
@@ -170,6 +173,15 @@ describe('overflow per-level ladders', () => {
     expect(atEachLevel('mirror_self', (p) => p.cloneInterval)).toEqual([40, 30, 20]);
     expect(atEachLevel('mirror_self', (p) => p.cloneDamageScale)).toEqual([0.5, 0.6, 0.7]);
     expect(atEachLevel('necro_fleet', (p) => p.necroChance)).toEqual([0.25, 0.35, 0.5]);
+  });
+
+  it('refunds the ultimate, replays the volley and throws the spear on every rung', () => {
+    expect(atEachLevel('overclock_protocol', (p) => p.skillRefundPerKill)).toEqual([0.15, 0.25, 0.4]);
+    expect(atEachLevel('shot_echo', (p) => p.echoDelay)).toEqual([0.35, 0.3, 0.25]);
+    expect(atEachLevel('shot_echo', (p) => p.echoDamageScale)).toEqual([0.3, 0.4, 0.5]);
+    expect(atEachLevel('rift_lance', (p) => p.lanceInterval)).toEqual([6, 4.5, 3]);
+    expect(atEachLevel('rift_lance', (p) => p.lanceDamageScale)).toEqual([2.5, 3, 3.5]);
+    expect(atEachLevel('rift_lance', (p) => p.riftDamageScale)).toEqual([0.22, 0.28, 0.34]);
   });
 });
 

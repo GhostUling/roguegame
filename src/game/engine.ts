@@ -19,6 +19,10 @@ import {
   Turret,
   Clone,
   Ally,
+  DamageSource,
+  EchoVolley,
+  Lance,
+  Rift,
 } from './types';
 import { sound } from './audio';
 import { drawCharacterShip, getCharacterDef } from './characters';
@@ -39,6 +43,21 @@ import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } 
 import { GRID_FLASH, GRID_STUN, gridLineDistance, gridVerdictDamage } from './gridVerdict';
 import { CLONE_LIFETIME, MAX_CLONES, cloneShotDamage, cloneStationOffset } from './clones';
 import { ALLY_LIFETIME, MAX_ALLIES, ALLY_CONTACT_COOLDOWN, allyFromEnemy } from './allies';
+import { MAX_PENDING_ECHOES, echoRoundDamage } from './shotEcho';
+import {
+  LANCE_LENGTH,
+  LANCE_LIFETIME,
+  LANCE_RADIUS,
+  LANCE_SPEED,
+  MAX_RIFTS,
+  RIFT_LIFETIME,
+  RIFT_RADIUS,
+  RIFT_SPACING,
+  RIFT_TICK_SECONDS,
+  lanceDamage,
+  riftNodePath,
+  riftTickDamage,
+} from './riftLance';
 import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from './enemyTypes';
 import { renderScene } from './render/renderer';
 
@@ -80,6 +99,9 @@ export class GameEngine {
   public turrets: Turret[] = [];
   public clones: Clone[] = [];
   public allies: Ally[] = [];
+  public echoes: EchoVolley[] = [];
+  public lances: Lance[] = [];
+  public rifts: Rift[] = [];
 
   // System
   private animFrameId: number = 0;
@@ -126,6 +148,9 @@ export class GameEngine {
   private nextTurretId: number = 1;
   private nextCloneId: number = 1;
   private nextAllyId: number = 1;
+  private nextEchoId: number = 1;
+  private nextLanceId: number = 1;
+  private nextRiftId: number = 1;
   /** Lance Kappa's annihilation spear counts down before it fires. */
   private spearWindup: number = 0;
   private spearAngle: number = 0;
@@ -238,6 +263,9 @@ export class GameEngine {
     this.turrets = [];
     this.clones = [];
     this.allies = [];
+    this.echoes = [];
+    this.lances = [];
+    this.rifts = [];
     this.spearWindup = 0;
     this.gameTime = 0;
     this.nextWaveTimer = 0;
@@ -330,6 +358,7 @@ export class GameEngine {
         const dy = enemy.y - this.player.y;
         if (dx * dx + dy * dy < 130 * 130) {
           enemy.hp -= blinkDamage;
+          enemy.lastDamageSource = 'skill';
           enemy.hitFlashTimer = 0.08;
           enemy.x += (dx / 130) * 30;
           enemy.y += (dy / 130) * 30;
@@ -355,6 +384,7 @@ export class GameEngine {
         life: 0,
         maxLife: 2.5,
         damagePerSec: this.player.bulletDamage * 1.5,
+        fromSkill: true,
       });
 
       this.triggerScreenShake(6);
@@ -678,6 +708,11 @@ export class GameEngine {
     // 5. Auto Shoot & Barrage
     this.updateAutoShooting();
 
+    // 5b. Shot Echo replays and the Rift Lance. Both are the player's own
+    //     weapons, so a world freeze does not hold them either.
+    this.updateEchoes(dt);
+    this.updateRiftLances(dt);
+
     // 6. Update Orbit Satellites
     this.updateSatellites(dt);
 
@@ -957,6 +992,7 @@ export class GameEngine {
         maxLife: 1.5,
         hitEnemyIds: new Set(),
         bouncesRemaining: this.player.bouncingBullets || 0,
+        fromSkill: true,
       });
     }
     sound.playShoot(1.3);
@@ -1168,6 +1204,9 @@ export class GameEngine {
         });
       }
     }
+
+    // Shot Echo: queue this exact volley to be fired again from this spot.
+    this.recordVolleyEcho(origin, baseAngle, count, spreadAngle);
 
     sound.playShoot(1 + (count - 1) * 0.05);
   }
@@ -1556,7 +1595,7 @@ export class GameEngine {
         if (dist <= reach && a.attackCooldown <= 0) {
           a.attackCooldown = ALLY_CONTACT_COOLDOWN;
           enemy.hitFlashTimer = 0.08;
-          this.damageEnemy(enemy, Math.round(a.damage * this.statusDamageMultiplier(enemy)));
+          this.damageEnemy(enemy, Math.round(a.damage * this.statusDamageMultiplier(enemy)), 'ally');
           this.spawnImpactSparks(enemy.x, enemy.y, '#34d399', 3);
           if (enemy.hp <= 0) {
             const idx = this.enemies.indexOf(enemy);
@@ -1598,6 +1637,194 @@ export class GameEngine {
     this.spawnImpactSparks(e.x, e.y, '#34d399', 5);
   }
 
+  /**
+   * Shot Echo: tick the queued volleys and fire each one again where it was
+   * fired from. The replay carries no crit and is marked secondary, so a replay
+   * cannot feed the cards that spawn more rounds on a hit.
+   */
+  private updateEchoes(dt: number) {
+    for (let i = this.echoes.length - 1; i >= 0; i--) {
+      const e = this.echoes[i];
+      e.timer -= dt;
+      if (e.timer > 0) continue;
+
+      this.echoes.splice(i, 1);
+      if (this.projectiles.length >= 120) continue;
+
+      for (let n = 0; n < e.count; n++) {
+        const angle = e.angle + (n - (e.count - 1) / 2) * e.spreadAngle;
+        this.projectiles.push({
+          id: this.nextProjId++,
+          x: e.x,
+          y: e.y,
+          vx: Math.cos(angle) * this.player.bulletSpeed,
+          vy: Math.sin(angle) * this.player.bulletSpeed,
+          damage: e.damage,
+          pierce: this.player.bulletPierce,
+          radius: 4,
+          color: '#5eead4',
+          trail: [],
+          isCrit: false,
+          isSecondary: true,
+          life: 0,
+          maxLife: 1.6,
+          hitEnemyIds: new Set(),
+          bouncesRemaining: this.player.bouncingBullets || 0,
+        });
+      }
+      sound.playShoot(0.6);
+    }
+  }
+
+  /** Queues one replay of the volley that was just fired. */
+  private recordVolleyEcho(
+    origin: { x: number; y: number },
+    baseAngle: number,
+    count: number,
+    spreadAngle: number
+  ) {
+    if (this.player.echoDelay <= 0) return;
+    if (this.echoes.length >= MAX_PENDING_ECHOES) return;
+
+    this.echoes.push({
+      id: this.nextEchoId++,
+      x: origin.x,
+      y: origin.y,
+      angle: baseAngle,
+      count,
+      spreadAngle,
+      damage: echoRoundDamage(this.player),
+      timer: this.player.echoDelay,
+    });
+  }
+
+  /**
+   * Rift Lance: the clock throws the spear, and the spear does the rest. Its
+   * travel is walked in seam-sized samples, so the seam is laid evenly and a
+   * 3x-speed lance still cannot pass through a body between two frames.
+   */
+  private updateRiftLances(dt: number) {
+    if (this.player.lanceInterval > 0) {
+      this.player.lanceTimer -= dt;
+      if (this.player.lanceTimer <= 0) {
+        this.player.lanceTimer = this.player.lanceInterval;
+        this.throwLance();
+      }
+    }
+
+    for (let i = this.lances.length - 1; i >= 0; i--) {
+      const l = this.lances[i];
+      l.life += dt;
+
+      const toX = l.x + l.vx * (dt * 60);
+      const toY = l.y + l.vy * (dt * 60);
+
+      for (const node of riftNodePath(l.x, l.y, toX, toY)) {
+        this.tearRift(node.x, node.y, l.angle);
+        this.lanceSkewer(node.x, node.y, l);
+      }
+
+      l.x = toX;
+      l.y = toY;
+
+      const gone =
+        l.life >= l.maxLife ||
+        l.x < -60 ||
+        l.x > this.width + 60 ||
+        l.y < -60 ||
+        l.y > this.height + 60;
+      if (gone) this.lances.splice(i, 1);
+    }
+
+    // The seam holds for a moment and cuts whatever crosses it.
+    for (let i = this.rifts.length - 1; i >= 0; i--) {
+      const r = this.rifts[i];
+      r.life += dt;
+      if (r.life >= r.maxLife) {
+        this.rifts.splice(i, 1);
+        continue;
+      }
+
+      r.tickTimer -= dt;
+      if (r.tickTimer > 0) continue;
+      r.tickTimer = RIFT_TICK_SECONDS;
+
+      const damage = riftTickDamage(this.player);
+      for (let k = this.enemies.length - 1; k >= 0; k--) {
+        const e = this.enemies[k];
+        // The seam shreds small geometry; a boss walks through it.
+        if (e.isBoss) continue;
+
+        const dx = e.x - r.x;
+        const dy = e.y - r.y;
+        const reach = r.radius + e.radius;
+        if (dx * dx + dy * dy > reach * reach) continue;
+
+        e.hitFlashTimer = 0.06;
+        this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)));
+        if (e.hp <= 0) this.killEnemy(e, k);
+      }
+    }
+  }
+
+  private throwLance() {
+    const { enemy } = this.nearestEnemy(this.player.x, this.player.y);
+    const angle = enemy
+      ? Math.atan2(enemy.y - this.player.y, enemy.x - this.player.x)
+      : this.player.angle;
+
+    this.lances.push({
+      id: this.nextLanceId++,
+      x: this.player.x,
+      y: this.player.y,
+      vx: Math.cos(angle) * LANCE_SPEED,
+      vy: Math.sin(angle) * LANCE_SPEED,
+      angle,
+      damage: lanceDamage(this.player),
+      life: 0,
+      maxLife: LANCE_LIFETIME,
+      hitEnemyIds: new Set(),
+    });
+    this.spawnImpactSparks(this.player.x, this.player.y, '#c084fc', 5);
+    sound.playLaserShot();
+  }
+
+  /** Shears one node of the seam open where the spear passed. */
+  private tearRift(x: number, y: number, angle: number) {
+    // Oldest out, not newest refused: a tear is one continuous line, so
+    // refusing the newest node would leave a hole in the middle of it.
+    if (this.rifts.length >= MAX_RIFTS) this.rifts.shift();
+    this.rifts.push({
+      id: this.nextRiftId++,
+      x,
+      y,
+      angle,
+      radius: RIFT_RADIUS,
+      life: 0,
+      maxLife: RIFT_LIFETIME,
+      tickTimer: RIFT_TICK_SECONDS,
+    });
+  }
+
+  /** The spear itself: everything on its path takes the hit, once. */
+  private lanceSkewer(x: number, y: number, lance: Lance) {
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (lance.hitEnemyIds.has(e.id)) continue;
+
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const reach = e.radius + LANCE_RADIUS;
+      if (dx * dx + dy * dy > reach * reach) continue;
+
+      lance.hitEnemyIds.add(e.id);
+      e.hitFlashTimer = 0.1;
+      this.damageEnemy(e, Math.round(lance.damage * this.statusDamageMultiplier(e)));
+      this.spawnImpactSparks(e.x, e.y, '#c084fc', 3);
+      if (e.hp <= 0) this.killEnemy(e, i);
+    }
+  }
+
   private updateSatellites(dt: number) {
     if (this.player.orbitSatellites <= 0) return;
 
@@ -1629,6 +1856,7 @@ export class GameEngine {
         const hitR = enemy.radius + sat.radius;
         if (dx * dx + dy * dy < hitR * hitR) {
           enemy.hp -= sat.damage;
+          enemy.lastDamageSource = 'weapon';
           enemy.hitFlashTimer = 0.07;
           sound.playHit();
 
@@ -1675,6 +1903,7 @@ export class GameEngine {
         const dy = enemy.y - this.player.y;
         if (dx * dx + dy * dy < 260 * 260) {
           enemy.hp -= novaDamage;
+          enemy.lastDamageSource = 'weapon';
           enemy.hitFlashTimer = 0.1;
           const knockAngle = Math.atan2(dy, dx);
           enemy.x += Math.cos(knockAngle) * 45;
@@ -1715,6 +1944,7 @@ export class GameEngine {
           e.x += (dx / dist) * 90;
           e.y += (dy / dist) * 90;
           e.hp -= Math.round(this.player.bulletDamage * 0.8);
+          e.lastDamageSource = 'weapon';
           e.hitFlashTimer = 0.08;
         }
       }
@@ -1752,6 +1982,7 @@ export class GameEngine {
 
           if (distSq < 50 * 50) {
             enemy.hp -= v.damagePerSec * dt;
+            enemy.lastDamageSource = v.fromSkill ? 'skill' : 'weapon';
             if (Math.random() < 0.1) {
               enemy.hitFlashTimer = 0.05;
             }
@@ -1797,6 +2028,7 @@ export class GameEngine {
           const dy = enemy.y - v.y;
           if (dx * dx + dy * dy < 180 * 180) {
             enemy.hp -= blastDmg;
+            enemy.lastDamageSource = v.fromSkill ? 'skill' : 'weapon';
             enemy.hitFlashTimer = 0.1;
           }
         }
@@ -1865,7 +2097,7 @@ export class GameEngine {
             const finalDmg = Math.round(p.damage * this.statusDamageMultiplier(enemy));
 
             enemy.hitFlashTimer = 0.08;
-            this.damageEnemy(enemy, finalDmg);
+            this.damageEnemy(enemy, finalDmg, p.fromSkill ? 'skill' : 'weapon');
 
             // Cryo slow application
             if (this.player.cryoSlow) {
@@ -1935,6 +2167,7 @@ export class GameEngine {
                   maxLife: 0.85,
                   hitEnemyIds: new Set([enemy.id]),
                   isSecondary: true,
+                  fromSkill: p.fromSkill,
                 });
               });
               this.spawnImpactSparks(enemy.x, enemy.y, '#00ffcc', 4);
@@ -1974,6 +2207,7 @@ export class GameEngine {
                   maxLife: 0.6,
                   hitEnemyIds: new Set([enemy.id]),
                   isSecondary: true,
+                  fromSkill: p.fromSkill,
                 });
               });
             }
@@ -1991,6 +2225,7 @@ export class GameEngine {
                     chains++;
                     const arcDmg = Math.round(p.damage * this.player.chainLightningDamageScale);
                     other.hp -= arcDmg;
+                    other.lastDamageSource = 'weapon';
                     other.hitFlashTimer = 0.08;
                     if (this.player.chainLightningStun > 0) {
                       other.frozenTimer = Math.max(
@@ -2054,6 +2289,7 @@ export class GameEngine {
                   maxLife: 1.2,
                   hitEnemyIds: new Set([enemy.id]),
                   isSecondary: true,
+                  fromSkill: p.fromSkill,
                 });
               }
             }
@@ -2243,11 +2479,13 @@ export class GameEngine {
   }
 
   /**
-   * The one door player damage goes through: it books the hit and, while Siphon
-   * Eta's harvest is up, converts a third of it back into health.
+   * The one door player damage goes through: it books the hit, records who dealt
+   * it (the on-kill cards read that), and, while Siphon Eta's harvest is up,
+   * converts a third of it back into health.
    */
-  private damageEnemy(e: Enemy, amount: number): void {
+  private damageEnemy(e: Enemy, amount: number, source: DamageSource = 'weapon'): void {
     e.hp -= amount;
+    e.lastDamageSource = source;
     this.player.totalDamageDealt += amount;
 
     if (
@@ -2282,7 +2520,8 @@ export class GameEngine {
     damage: number,
     color: string,
     excludeId?: number,
-    burnSeconds = 0
+    burnSeconds = 0,
+    source: DamageSource = 'weapon'
   ): void {
     if (this.shockwaves.length < 14) {
       this.shockwaves.push({
@@ -2312,8 +2551,9 @@ export class GameEngine {
       if (burnSeconds > 0) {
         e.burnTimer = Math.max(e.burnTimer || 0, burnSeconds);
         e.burnDps = Math.round(this.player.bulletDamage * 0.6);
+        e.burnSource = source;
       }
-      this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)));
+      this.damageEnemy(e, Math.round(damage * this.statusDamageMultiplier(e)), source);
     }
   }
 
@@ -2331,6 +2571,7 @@ export class GameEngine {
         y: Math.max(margin, Math.min(this.height - margin, this.player.y + Math.sin(a) * ring)),
         timer: 1.5,
         fuse: 1.5,
+        fromSkill: true,
       });
     }
   }
@@ -2351,7 +2592,8 @@ export class GameEngine {
         Math.round(this.player.bulletDamage * 2.0),
         '#f97316',
         undefined,
-        3
+        3,
+        core.fromSkill ? 'skill' : 'weapon'
       );
       this.triggerScreenShake(4);
       anyDetonated = true;
@@ -2441,7 +2683,7 @@ export class GameEngine {
 
       e.hitFlashTimer = 0.12;
       const hit = Math.round(spearDmg * this.statusDamageMultiplier(e));
-      this.damageEnemy(e, hit);
+      this.damageEnemy(e, hit, 'skill');
       e.x += dirX * 120;
       e.y += dirY * 120;
       if (this.floatingTexts.length < 20) {
@@ -2648,6 +2890,7 @@ export class GameEngine {
       if (e.burnTimer && e.burnTimer > 0) {
         e.burnTimer -= dt;
         e.hp -= (e.burnDps || 0) * dt;
+        e.lastDamageSource = e.burnSource || 'weapon';
         if (Math.random() < 0.12) this.spawnImpactSparks(e.x, e.y, '#f97316', 1);
       }
 
@@ -2843,7 +3086,7 @@ export class GameEngine {
           e.x += Math.cos(away) * shove;
           e.y += Math.sin(away) * shove;
           e.hitFlashTimer = 0.1;
-          this.damageEnemy(e, ramDmg);
+          this.damageEnemy(e, ramDmg, 'skill');
           if (this.floatingTexts.length < 20) {
             this.addFloatingText(e.x, e.y - 12, `${ramDmg}`, '#a3e635', charging);
           }
@@ -2877,6 +3120,7 @@ export class GameEngine {
             e.x += Math.cos(bounceAngle) * 25;
             e.y += Math.sin(bounceAngle) * 25;
             e.hp -= 15;
+            e.lastDamageSource = 'weapon';
             e.hitFlashTimer = 0.08;
           }
 
@@ -2969,6 +3213,7 @@ export class GameEngine {
           const oy = other.y - e.y;
           if (ox * ox + oy * oy < 110 * 110) {
             other.hp -= shatterDmg;
+            other.lastDamageSource = 'weapon';
             other.frozenTimer = 2.0;
             other.hitFlashTimer = 0.08;
           }
@@ -3008,6 +3253,15 @@ export class GameEngine {
     if (this.player.comboRatePerTen > 0) {
       this.player.comboCount++;
       this.player.comboTimer = 2.0;
+    }
+    // Overclock Protocol refunds the ultimate, but only for the hull's own
+    // kills. An ability paying itself back for what it killed would never stop.
+    if (
+      this.player.skillRefundPerKill > 0 &&
+      (e.lastDamageSource ?? 'weapon') === 'weapon' &&
+      this.player.skillCooldown > 0
+    ) {
+      this.player.skillCooldown = Math.max(0, this.player.skillCooldown - this.player.skillRefundPerKill);
     }
     if (
       this.player.necroChance > 0 &&
@@ -3163,6 +3417,7 @@ export class GameEngine {
             e.x += (dx / dist) * 70;
             e.y += (dy / dist) * 70;
             e.hp -= Math.round(this.player.bulletDamage * 0.6);
+            e.lastDamageSource = 'weapon';
             e.hitFlashTimer = 0.08;
           }
         }

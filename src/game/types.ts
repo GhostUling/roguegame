@@ -3,6 +3,13 @@ export interface Vector2 {
   y: number;
 }
 
+/**
+ * Who dealt a blow. Only `'weapon'` kills feed the on-kill cards, and the
+ * distinction is not academic: an ability that refunded its own cooldown from
+ * kills it caused itself would never stop firing.
+ */
+export type DamageSource = 'weapon' | 'skill' | 'ally';
+
 export type CharacterId =
   | 'alpha_prism'
   | 'beta_phalanx'
@@ -59,6 +66,8 @@ export interface SingularityVortex {
   life: number;
   maxLife: number;
   damagePerSec: number;
+  /** True when the vortex came out of the ultimate rather than a card. */
+  fromSkill?: boolean;
 }
 
 export interface Drone {
@@ -204,6 +213,13 @@ export interface Player {
   cloneTimer: number;
   cloneDamageScale: number;
   necroChance: number; // chance a kill revives on the player's side, 0 = off
+  echoDelay: number; // seconds before a volley replays, 0 = card not taken
+  echoDamageScale: number;
+  skillRefundPerKill: number; // seconds taken off the ultimate per weapon kill
+  lanceInterval: number; // seconds between thrown lances, 0 = card not taken
+  lanceTimer: number;
+  lanceDamageScale: number;
+  riftDamageScale: number; // damage one seam tick deals to a mob
   massRoundScale: number; // px added to the hit radius per 100 damage
   hypercritChance: number;
   hypercritFlash: number; // seconds of white-out left after a ×20 hit
@@ -267,6 +283,12 @@ export interface Enemy {
   markedTimer?: number; // Lance Kappa mark: takes +25% damage while it burns down
   burnTimer?: number; // Fusion Iota burn: seconds of damage over time left
   burnDps?: number;
+  burnSource?: DamageSource; // who lit the burn, so its kill is credited correctly
+  /**
+   * Who landed the last blow on this body. The on-kill cards read it, so an
+   * enemy taken down by the ultimate does not pay out to the cards.
+   */
+  lastDamageSource?: DamageSource;
 }
 
 export interface Projectile {
@@ -292,6 +314,12 @@ export interface Projectile {
    * cascade; without the flag a single spawned round would multiply itself.
    */
   isSecondary?: boolean;
+  /**
+   * This round came out of the active skill rather than the hull's own gun. It
+   * still hurts, but its kills must not pay the on-kill cards, so the damage
+   * source travels with the round instead of being guessed at the hit.
+   */
+  fromSkill?: boolean;
   /** Fusion Iota overload shell: every sixth round, detonates far wider. */
   isIotaBomb?: boolean;
   /** Overflow's Delayed Detonation: an armed shell has stopped and counts down. */
@@ -376,6 +404,7 @@ export interface Beam {
   width: number;
   life: number;
   maxLife: number;
+  fromSkill?: boolean;
 }
 
 /** A Fusion Iota melt core: primed where it lands, detonates when the fuse ends. */
@@ -385,6 +414,54 @@ export interface MeltCore {
   y: number;
   timer: number;
   fuse: number;
+  fromSkill?: boolean;
+}
+
+/**
+ * One volley waiting to be replayed from the spot it was fired from. It carries
+ * the whole volley — angle, barrel count, spread — so a replay does not have to
+ * know which wing fired it or what the stats were at the time.
+ */
+export interface EchoVolley {
+  id: number;
+  x: number;
+  y: number;
+  angle: number;
+  count: number;
+  spreadAngle: number;
+  damage: number;
+  timer: number;
+}
+
+/**
+ * A thrown spear: it flies, it pierces, and it tears a seam through the floor
+ * behind it. It carries no trail of its own — the tear is the only thing it
+ * leaves, and a motion streak on top of that reads as a projectile instead.
+ */
+export interface Lance {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  damage: number;
+  life: number;
+  maxLife: number;
+  hitEnemyIds: Set<number>;
+  fromSkill?: boolean;
+}
+
+/** One node of a torn seam: it holds for a moment and cuts whatever crosses it. */
+export interface Rift {
+  id: number;
+  x: number;
+  y: number;
+  angle: number;
+  radius: number;
+  life: number;
+  maxLife: number;
+  tickTimer: number;
 }
 
 export interface Satellite {
