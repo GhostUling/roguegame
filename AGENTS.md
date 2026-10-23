@@ -20,7 +20,7 @@ npm test        # vitest，必须全绿
 
 2. **删功能要连文件一起删。** 不要注释掉旧实现，不要留 `// removed`。git 会替你记住。
 
-3. **数值只写一处。** 敌人属性 → `src/game/core/enemyTypes.ts`；机体 → `src/game/characters/<机体>.ts`；强化 → `src/game/cards/upgrades.ts`（溢流模式专属卡 → `src/game/cards/overflowUpgrades.ts`，两池的 key 必须全局唯一，因为共用一个 `upgradeLevels`）；模式差异 → `src/game/core/modes.ts`。新增敌人 = 表里加一行，不要写 if-else 分支。发现自己要在两个文件改同一个数值，就是设计错了。
+3. **数值只写一处。** 敌人属性 → `src/game/core/enemyTypes.ts`；机体 → `src/game/characters/<机体>.ts`；强化 → `src/game/cards/upgrades.ts`（溢流模式专属卡 → `src/game/cards/overflowUpgrades.ts`，两池的 key 必须全局唯一，因为共用一个 `upgradeLevels`）；模式差异 → `src/game/core/modes.ts`。捕食者模式里「猎物变强」= 让它从同一张 `upgrades.ts` 里白拿一级（节拍与抽取在 `engine/preyBuff.ts`），**禁止为它另立一张强化数值表**。新增敌人 = 表里加一行，不要写 if-else 分支。发现自己要在两个文件改同一个数值，就是设计错了。
 
 4. **加内容前先查清单。** `docs/CONTRIBUTING.md` 有「改动落在哪个文件」速查表，以及加机体 / 加强化 / 加敌人 / **加模式**四份逐文件清单。四类里只有加模式还需要动多处（模式的表现部分），必须照着走。
 
@@ -41,7 +41,7 @@ npm test        # vitest，必须全绿
 ```
 src/
   App.tsx                 状态机 + 引擎/UI 编排
-  components/             UI 层（8 个界面/弹窗，含仅开发环境的测试场面板），不算游戏规则
+  components/             UI 层（10 个界面/弹窗，含测试场与复活槽面板），不算游戏规则
   game/
     engine/               编排层
       index.ts              全部游戏状态 + update 流水线
@@ -49,12 +49,16 @@ src/
       collision.ts          玩家弹 / 敌弹 / 接触的命中判定（纯几何，有单测）
       damage.ts             状态易伤与护盾减伤（纯算式，有单测）
       drops.ts              击杀得分、晶石掉落规格、经验曲线、拾取速度（纯数值，有单测）
+      preyAi.ts             捕食者：猎物走位与技能时机，生存第一、不认识玩家（纯策略，有单测）
+      swarm.ts              捕食者：士兵咬合冷却/份额、波次数量、质心（纯数值，有单测）
+      preyBuff.ts           捕食者：猎物每 30 秒白拿一级的节拍与抽取（纯逻辑，有单测；数值仍属 cards/upgrades.ts）
     core/                 共享的模型与规则，引擎 / UI / 测试都读它
       types.ts              共享类型
       modes.ts              游戏模式描述表（模式差异的唯一来源）
       pilots.ts             双机编队 / 副机属性换算
       player.ts             开局玩家状态构造（合体属性在这里算）
       enemyTypes.ts         7 种敌人数据表 + 波次表
+      predatorForms.ts      捕食者七形态表 + 血量/移速/接触换算 + 复活槽候选（纯数据）
     cards/                卡牌子系统（一张卡的数据与图鉴文案）
       upgrades.ts           标准池 25 条强化数据表（+ atLevel 逐级取值）
       overflowUpgrades.ts   溢流模式专属卡池 25 张（独立表，数值不讲等价）

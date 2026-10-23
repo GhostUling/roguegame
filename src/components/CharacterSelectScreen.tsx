@@ -198,7 +198,11 @@ export const CharacterSelectScreen: React.FC<CharacterSelectScreenProps> = ({
                 : 'text-cyan-400 bg-cyan-950/60 border-cyan-500/30'
             }`}
           >
-            {isTwin ? 'TWIN LINK // 双子编队装配' : 'VESSEL MATRIX // 核心机体选配'}
+            {isTwin
+              ? 'TWIN LINK // 双子编队装配'
+              : mode === 'predator'
+                ? 'PREY MATRIX // 选择你的猎物'
+                : 'VESSEL MATRIX // 核心机体选配'}
           </div>
         </div>
 
@@ -407,7 +411,9 @@ export const CharacterSelectScreen: React.FC<CharacterSelectScreenProps> = ({
           <span>
             {isTwin
               ? `确认双机接入并出击 (DEPLOY // ${defA.nameZh} + ${defB.nameZh})`
-              : `确认接入机体并出击 (DEPLOY // ${char.nameZh})`}
+              : mode === 'predator'
+                ? `锁定这只猎物 (HUNT // ${char.nameZh})`
+                : `确认接入机体并出击 (DEPLOY // ${char.nameZh})`}
           </span>
         </button>
       </div>

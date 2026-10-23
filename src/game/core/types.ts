@@ -80,7 +80,7 @@ export interface Drone {
   lastMissileTime?: number;
 }
 
-export type GameMode = 'standard' | 'twin_link' | 'overflow' | 'sandbox';
+export type GameMode = 'standard' | 'twin_link' | 'overflow' | 'sandbox' | 'predator';
 
 export interface Player {
   characterId: CharacterId;
@@ -279,6 +279,8 @@ export interface Enemy {
   aimLocked?: boolean;
   chargeDir?: { x: number; y: number };
   attackCooldown?: number;
+  /** Predator: seconds until this soldier may bite the prey again. */
+  contactCooldown?: number;
   frozenTimer?: number; // Cryo slow status
   stunTimer?: number; // A hard hold: movement goes to zero, unlike the cryo slow
   markedTimer?: number; // Lance Kappa mark: takes +25% damage while it burns down
@@ -325,6 +327,81 @@ export interface Projectile {
   isIotaBomb?: boolean;
   /** Overflow's Delayed Detonation: an armed shell has stopped and counts down. */
   delayedFuse?: number;
+}
+
+/**
+ * Predator: you. A monster form driven by hand while the engine's `player` is
+ * the scripted prey. Stats come from `core/predatorForms.ts`, never from a
+ * chassis — the hull you are hunting keeps all of its own passives.
+ */
+export interface Pilot {
+  form: EnemyType;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  /** Damage per bite on the prey. */
+  contactDamage: number;
+  /** i-frames after being hit or after a morph. */
+  invulnTimer: number;
+  /** Seconds until the form's ult is ready. */
+  ultTimer: number;
+  /** 相位穿影: seconds left of passing through everything. */
+  phaseTimer: number;
+  /** Lunge / charge: seconds left of the dash itself. */
+  dashTimer: number;
+  dashDirX: number;
+  dashDirY: number;
+  /** 蓄力锁线: the charge state, on the sniper's own timeline. */
+  lockTimer: number;
+  aimAngle: number;
+  aimLocked: boolean;
+  angle: number;
+  rotation: number;
+  rotSpeed: number;
+}
+
+/**
+ * What the Predator HUD shows. Built by the engine each stats tick so the UI
+ * never re-derives a rule (hard constraint 5).
+ */
+/**
+ * A free level the prey took out of the run's card pool. The effect is the
+ * card's own `apply`; this is only the ledger the panels read.
+ */
+export interface PreyUpgradeView {
+  key: string;
+  nameZh: string;
+  level: number;
+  /** Seconds into the hunt it landed. */
+  atTime: number;
+}
+
+export interface PredatorSnapshot {
+  heroHp: number;
+  heroMaxHp: number;
+  /** 背水 stage: the prey shoots faster and stops regenerating. */
+  desperate: boolean;
+  swarmCount: number;
+  swarmCap: number;
+  swarmPeak: number;
+  formNameZh: string;
+  ultNameZh: string;
+  ultReadyIn: number;
+  pilotHp: number;
+  pilotMaxHp: number;
+  morphs: number;
+  timeLeft: number;
+  /** The three corner slots, in slot order; an empty slot is null. */
+  respawnSlots: (EnemyType | null)[];
+  /** What the prey has grown into, oldest first. */
+  preyUpgrades: PreyUpgradeView[];
+  /** Seconds until the prey's next free level. */
+  nextBuffIn: number;
 }
 
 export interface EnemyProjectile {
@@ -536,7 +613,14 @@ export interface UpgradeOption {
   apply: (player: Player, currentLvl: number) => void;
 }
 
-export type GameState = 'title' | 'character_select' | 'playing' | 'paused' | 'levelup' | 'gameover' | 'victory';
+export type GameState =
+  | 'title'
+  | 'character_select'
+  | 'playing'
+  | 'paused'
+  | 'levelup'
+  | 'gameover'
+  | 'victory';
 
 export interface GameStats {
   survivedTime: number; // in seconds
@@ -547,4 +631,12 @@ export interface GameStats {
   upgradesTaken: string[];
   gameMode?: GameMode;
   twinPilotId?: CharacterId;
+  /** Predator: the prey was brought down inside the clock. */
+  victory?: boolean;
+  /** Predator: seconds left on the hunt clock when it ended. */
+  timeLeft?: number;
+  /** Predator: how many forms you wore. */
+  morphs?: number;
+  /** Predator: the largest swarm on the field at once. */
+  swarmPeak?: number;
 }

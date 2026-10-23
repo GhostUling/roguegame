@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { sound } from '../game/infra/audio';
 import { GameMode } from '../game/core/types';
 import { GAME_MODES } from '../game/core/modes';
-import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame, FlaskConical } from 'lucide-react';
+import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame, FlaskConical, Skull } from 'lucide-react';
 
 /** Tailwind classes per mode accent; the mode table only carries the token. */
 const ACCENT_CLASSES = {
@@ -25,6 +25,11 @@ const ACCENT_CLASSES = {
     card: 'border-emerald-400 shadow-[0_0_22px_rgba(52,211,153,0.22)]',
     label: 'text-emerald-300',
     icon: FlaskConical,
+  },
+  rose: {
+    card: 'border-rose-400 shadow-[0_0_22px_rgba(251,113,133,0.22)]',
+    label: 'text-rose-300',
+    icon: Skull,
   },
 } as const;
 

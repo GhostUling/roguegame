@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/engine';
 import { sound } from './game/infra/audio';
-import { Player, UpgradeOption, GameStats, CharacterId, GameMode, EnemyType } from './game/core/types';
+import { Player, UpgradeOption, GameStats, CharacterId, GameMode, EnemyType, PredatorSnapshot } from './game/core/types';
 import { getRandomUpgrades } from './game/cards/upgrades';
 import { poolForMode } from './game/cards/upgradePools';
 import { modeForPilots, modeOfPlayer } from './game/core/modes';
@@ -18,6 +18,7 @@ import { StartScreen } from './components/StartScreen';
 import { CharacterSelectScreen } from './components/CharacterSelectScreen';
 import { CodexModal } from './components/CodexModal';
 import { SandboxPanel } from './components/SandboxPanel';
+import { RespawnSlots } from './components/RespawnSlots';
 import { DebugTracePanel } from './components/DebugTracePanel';
 import { DebugEvent } from './game/engine/debugTrace';
 import { flushTrace } from './game/infra/traceSink';
@@ -39,6 +40,8 @@ export default function App() {
   const [playerState, setPlayerState] = useState<Player | null>(null);
   const [gameTime, setGameTime] = useState<number>(0);
   const [bossWarning, setBossWarning] = useState<boolean>(false);
+  /** Predator only: what the hunt HUD reads, built by the engine. */
+  const [predatorState, setPredatorState] = useState<PredatorSnapshot | null>(null);
   const [currentUpgrades, setCurrentUpgrades] = useState<UpgradeOption[]>([]);
   const [upgradeLevels, setUpgradeLevels] = useState<Record<string, number>>({});
   const upgradeLevelsRef = useRef<Record<string, number>>({});
@@ -102,6 +105,7 @@ export default function App() {
         };
         setEndStats(fullStats);
         setGameState('gameover');
+        setPredatorState(null);
 
         if (stats.score > highScore) {
           setHighScore(stats.score);
@@ -112,10 +116,11 @@ export default function App() {
           }
         }
       },
-      onStatsUpdate: (p, time, warning) => {
+      onStatsUpdate: (p, time, warning, predator) => {
         setPlayerState({ ...p });
         setGameTime(time);
         setBossWarning(warning);
+        setPredatorState(predator ?? null);
       },
     });
 
@@ -320,8 +325,7 @@ export default function App() {
     });
   }, []);
 
-  const handleChangeSandboxPool = useCallback((pool: 'standard' | 'overflow') => {
-    sandboxPoolRef.current = pool;
+  const handleChangeSandboxPool = useCallback((pool: 'standard' | 'overflow') => {    sandboxPoolRef.current = pool;
     setSandboxPool(pool);
   }, []);
 
@@ -336,6 +340,10 @@ export default function App() {
       sound.playClick(true);
       return next;
     });
+  }, []);
+
+  const handleBindRespawnSlot = useCallback((index: number, form: EnemyType | null) => {
+    engineRef.current?.bindRespawnSlot(index, form);
   }, []);
 
   const handleReroll = useCallback(() => {
@@ -417,6 +425,16 @@ export default function App() {
           onTriggerSkill={handleTriggerSkill}
           onChangeTimeScale={handleChangeTimeScale}
           onToggleControlMode={handleToggleControlMode}
+          predator={predatorState}
+        />
+      )}
+
+      {/* Predator: the forms you wake up as, picked once in the corner */}
+      {gameState === 'playing' && predatorState && (
+        <RespawnSlots
+          slots={predatorState.respawnSlots}
+          elapsedSeconds={gameTime}
+          onBind={handleBindRespawnSlot}
         />
       )}
 
@@ -475,6 +493,7 @@ export default function App() {
           player={playerState}
           upgradeLevels={upgradeLevels}
           gameTime={gameTime}
+          predator={predatorState}
           isMuted={isMuted}
           onToggleMute={toggleMute}
           infiniteReroll={infiniteReroll}

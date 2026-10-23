@@ -1,5 +1,6 @@
 import {
   Player,
+  Pilot,
   Enemy,
   Projectile,
   EnemyProjectile,
@@ -32,6 +33,7 @@ import {
 } from '../systems/gridVerdict';
 import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
 import { LANCE_LENGTH, RIFT_SPACING, riftBranch } from '../systems/riftLance';
+import { ENEMY_TYPES } from '../core/enemyTypes';
 
 /**
  * Everything the renderer reads. GameEngine satisfies this shape structurally, so
@@ -41,6 +43,9 @@ export interface RenderState {
   player: Player;
   enemies: Enemy[];
   projectiles: Projectile[];
+  /** Predator: your form, null outside the mode (and while choosing one). */
+  pilot: Pilot | null;
+  pilotRounds: Projectile[];
   enemyProjectiles: EnemyProjectile[];
   gems: Gem[];
   particles: DebrisParticle[];
@@ -105,6 +110,7 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
 
   // 10. Draw Player Projectiles (high-performance neon beam)
   renderProjectiles(ctx, frame);
+  renderPilotRounds(ctx, frame);
 
   // 11. Draw Thrown Lances & Energy Rays
   renderLances(ctx, frame);
@@ -112,6 +118,8 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
 
   // 12. Draw Player
   renderPlayer(ctx, frame);
+  renderPreyRing(ctx, frame);
+  renderPilot(ctx, frame);
 
   // 13. Draw Debris & Spark Particles
   renderParticles(ctx, frame);
@@ -1013,6 +1021,102 @@ export function renderProjectiles(ctx: CanvasRenderingContext2D, frame: RenderSt
     ctx.drawImage(sprite, p.x - 32, p.y - 32);
   }
 
+  ctx.restore();
+}
+
+/** Predator: the red lock ring on the hull you are hunting. */
+export function renderPreyRing(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (!frame.pilot) return;
+
+  ctx.save();
+  ctx.translate(frame.player.x, frame.player.y);
+  ctx.rotate(frame.pilot.rotation * 0.6);
+  ctx.strokeStyle = 'rgba(251, 113, 133, 0.85)';
+  ctx.lineWidth = 1.6;
+  ctx.setLineDash([10, 7]);
+  ctx.beginPath();
+  ctx.arc(0, 0, frame.player.radius + 14, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const tip = frame.player.radius + 18;
+  ctx.fillStyle = '#fb7185';
+  ctx.beginPath();
+  ctx.moveTo(tip, 0);
+  ctx.lineTo(tip + 9, -6);
+  ctx.lineTo(tip + 9, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Predator: your monster form, drawn from the table the soldiers use. */
+export function renderPilot(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  const pilot = frame.pilot;
+  if (!pilot) return;
+
+  const def = ENEMY_TYPES[pilot.form];
+  ctx.save();
+  ctx.translate(pilot.x, pilot.y);
+  ctx.rotate(pilot.rotation);
+
+  const blink = pilot.invulnTimer > 0 && Math.floor(pilot.invulnTimer * 20) % 2 === 0;
+  ctx.globalAlpha = blink ? 0.45 : 1;
+  ctx.beginPath();
+  for (let i = 0; i < def.sides; i++) {
+    const a = (i / def.sides) * Math.PI * 2 - Math.PI / 2;
+    const px = Math.cos(a) * pilot.radius;
+    const py = Math.sin(a) * pilot.radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = def.fillColor;
+  ctx.fill();
+  ctx.strokeStyle = def.strokeColor;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // The leader ring: you are one of the swarm, and the one being steered.
+  ctx.rotate(-pilot.rotation);
+  ctx.strokeStyle = 'rgba(253, 224, 71, 0.9)';
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.arc(0, 0, pilot.radius + 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (pilot.phaseTimer > 0) {
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#a5f3fc';
+    ctx.beginPath();
+    ctx.arc(0, 0, pilot.radius + 13, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/** Your ult rounds: brighter and heavier than the swarm's own bolts. */
+export function renderPilotRounds(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (frame.pilotRounds.length === 0) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const r of frame.pilotRounds) {
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = r.radius * 1.6;
+    ctx.beginPath();
+    ctx.moveTo(r.x - r.vx * 0.9, r.y - r.vy * 0.9);
+    ctx.lineTo(r.x, r.y);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff1f2';
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 

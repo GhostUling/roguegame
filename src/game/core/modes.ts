@@ -40,8 +40,24 @@ export interface GameModeDef {
   manualSpawn: boolean;
   /** Hidden from the title screen in a production build; dev server only. */
   devOnly: boolean;
+  /**
+   * Predator's inversion in one switch: the `player` entity is the scripted
+   * prey, `enemies` are your own soldiers, and your rounds only bite the prey.
+   * Every other mode leaves this false and keeps the standard collision paths.
+   */
+  heroPrey: boolean;
+  /** Predator: prey HP = chassis HP x this. 0 = no scripted prey in the run. */
+  heroHpScale: number;
+  /** Predator: soldiers spawned per wave tick. 0 = no swarm gathers. */
+  swarmMultiplier: number;
+  /** Predator: the pilot form's contact damage scale. */
+  contactDamageScale: number;
+  /** Predator: monster speed x this = how fast you steer. */
+  pilotSpeedScale: number;
+  /** Seconds of run before the clock ends it. 0 = no clock (every older mode). */
+  runDurationSec: number;
   /** UI hue token; the screens map it to Tailwind classes. */
-  accent: 'cyan' | 'fuchsia' | 'amber' | 'emerald';
+  accent: 'cyan' | 'fuchsia' | 'amber' | 'emerald' | 'rose';
 }
 
 export const GAME_MODES: Record<GameMode, GameModeDef> = {
@@ -60,6 +76,12 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     cardPool: 'standard',
     manualSpawn: false,
     devOnly: false,
+    heroPrey: false,
+    heroHpScale: 0,
+    swarmMultiplier: 0,
+    contactDamageScale: 1,
+    pilotSpeedScale: 1,
+    runDurationSec: 0,
     accent: 'cyan',
   },
   twin_link: {
@@ -77,6 +99,12 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     cardPool: 'standard',
     manualSpawn: false,
     devOnly: false,
+    heroPrey: false,
+    heroHpScale: 0,
+    swarmMultiplier: 0,
+    contactDamageScale: 1,
+    pilotSpeedScale: 1,
+    runDurationSec: 0,
     accent: 'fuchsia',
   },
   overflow: {
@@ -95,6 +123,12 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     cardPool: 'overflow',
     manualSpawn: false,
     devOnly: false,
+    heroPrey: false,
+    heroHpScale: 0,
+    swarmMultiplier: 0,
+    contactDamageScale: 1,
+    pilotSpeedScale: 1,
+    runDurationSec: 0,
     accent: 'amber',
   },
   sandbox: {
@@ -112,7 +146,36 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     cardPool: 'standard',
     manualSpawn: true,
     devOnly: true,
+    heroPrey: false,
+    heroHpScale: 0,
+    swarmMultiplier: 0,
+    contactDamageScale: 1,
+    pilotSpeedScale: 1,
+    runDurationSec: 0,
     accent: 'emerald',
+  },
+  predator: {
+    id: 'predator',
+    name: '捕食者',
+    tag: 'PREDATOR',
+    desc: '你是怪潮的一员：操控一只怪，带着同族士兵，猎杀那台原本由你驾驶的机体。它由脚本操控，五分钟之内把它咬死。',
+    pilotSlots: 1,
+    wingSpacing: 0,
+    spawnMultiplier: 1,
+    maxAlive: 260,
+    growthScale: 1,
+    threatScale: 0,
+    pooledHp: false,
+    cardPool: 'standard',
+    manualSpawn: false,
+    devOnly: false,
+    heroPrey: true,
+    heroHpScale: 12,
+    swarmMultiplier: 1.5,
+    contactDamageScale: 2.5,
+    pilotSpeedScale: 2.4,
+    runDurationSec: 300,
+    accent: 'rose',
   },
 };
 

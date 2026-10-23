@@ -77,12 +77,36 @@ describe('game mode table', () => {
     }
   });
 
+  it('makes Predator the only run where the player entity is the prey', () => {
+    const predator = GAME_MODES.predator;
+    expect(predator.heroPrey).toBe(true);
+    expect(predator.runDurationSec).toBe(300);
+    expect(predator.heroHpScale).toBeGreaterThan(1);
+    expect(predator.swarmMultiplier).toBeGreaterThan(0);
+    expect(predator.contactDamageScale).toBeGreaterThan(1);
+    expect(predator.pilotSpeedScale).toBeGreaterThan(1);
+    // One pilot, but it is the prey: no wing spacing, no card pool of its own yet.
+    expect(predator.pilotSlots).toBe(1);
+    expect(predator.wingSpacing).toBe(0);
+
+    for (const [key, def] of Object.entries(GAME_MODES)) {
+      if (key === 'predator') continue;
+      expect(def.heroPrey, key).toBe(false);
+      expect(def.runDurationSec, key).toBe(0);
+      expect(def.heroHpScale, key).toBe(0);
+      expect(def.swarmMultiplier, key).toBe(0);
+      expect(def.contactDamageScale, key).toBe(1);
+      expect(def.pilotSpeedScale, key).toBe(1);
+    }
+  });
+
   it('falls back to the standard run for an unknown mode id', () => {
     expect(modeOf(undefined)).toBe(GAME_MODES.standard);
     expect(modeOf('standard')).toBe(GAME_MODES.standard);
     expect(modeOf('twin_link')).toBe(GAME_MODES.twin_link);
     expect(modeOf('overflow')).toBe(GAME_MODES.overflow);
     expect(modeOf('sandbox')).toBe(GAME_MODES.sandbox);
+    expect(modeOf('predator')).toBe(GAME_MODES.predator);
   });
 });
 
@@ -113,6 +137,7 @@ describe('modeOfPlayer', () => {
       GAME_MODES.overflow
     );
     expect(modeOfPlayer({ gameMode: 'sandbox' })).toBe(GAME_MODES.sandbox);
+    expect(modeOfPlayer({ gameMode: 'predator' })).toBe(GAME_MODES.predator);
   });
 });
 

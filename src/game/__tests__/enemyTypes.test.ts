@@ -5,6 +5,7 @@ import {
   enemyHpFor,
   enemySpeedFor,
   pickEnemyType,
+  unlockedEnemyTypes,
 } from '../core/enemyTypes';
 
 const ALL_TYPES = ['boss', 'charger', 'chaser', 'hive', 'sniper', 'speeder', 'tank'];
@@ -109,5 +110,25 @@ describe('enemy threat curves', () => {
     const speederGain = enemySpeedFor(speeder, 300, 1) / speeder.speed;
     const tankGain = enemySpeedFor(ENEMY_TYPES.tank, 300, 1) / ENEMY_TYPES.tank.speed;
     expect(speederGain).toBeGreaterThan(tankGain);
+  });
+});
+
+describe('unlockedEnemyTypes', () => {
+  it('grows with the wave brackets, in bracket order', () => {
+    expect(unlockedEnemyTypes(0)).toEqual(['chaser', 'speeder']);
+    expect(unlockedEnemyTypes(60)).toEqual(['chaser', 'speeder', 'charger', 'tank']);
+    expect(unlockedEnemyTypes(120)).toEqual([
+      'chaser',
+      'speeder',
+      'charger',
+      'tank',
+      'sniper',
+      'hive',
+    ]);
+  });
+
+  it('never hands out the boss', () => {
+    expect(unlockedEnemyTypes(10_000)).not.toContain('boss');
+    expect(unlockedEnemyTypes(10_000)).toEqual(unlockedEnemyTypes(200));
   });
 });

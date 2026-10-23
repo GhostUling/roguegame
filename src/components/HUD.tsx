@@ -1,8 +1,9 @@
 import React from 'react';
-import { Player } from '../game/core/types';
+import { Player, PredatorSnapshot } from '../game/core/types';
 import { getCharacterDef } from '../game/characters';
 import { getPilotWeaponStats } from '../game/core/pilots';
 import { isPaired } from '../game/core/modes';
+import { PREY_BUFF_CALLOUT, PREY_BUFF_INTERVAL } from '../game/engine/preyBuff';
 import {
   Volume2,
   VolumeX,
@@ -31,6 +32,8 @@ interface HUDProps {
   onTriggerSkill: () => void;
   onChangeTimeScale: (scale: number) => void;
   onToggleControlMode: () => void;
+  /** Predator only: the hunt snapshot built by the engine. */
+  predator?: PredatorSnapshot | null;
 }
 
 export const HUD: React.FC<HUDProps> = ({
@@ -45,6 +48,7 @@ export const HUD: React.FC<HUDProps> = ({
   onTriggerSkill,
   onChangeTimeScale,
   onToggleControlMode,
+  predator,
 }) => {
   const char = getCharacterDef(player.characterId);
 
@@ -62,15 +66,103 @@ export const HUD: React.FC<HUDProps> = ({
   const hpProgress = Math.min(100, Math.max(0, (player.hp / player.maxHp) * 100));
 
   // Skill states
-  const isSkillReady = player.skillCooldown <= 0 && !player.isSkillActive;
+  const isSkillReady = predator
+    ? predator.ultReadyIn <= 0
+    : player.skillCooldown <= 0 && !player.isSkillActive;
   const cdProgress = player.skillMaxCooldown > 0
     ? (player.skillCooldown / player.skillMaxCooldown) * 100
     : 0;
 
   return (
     <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 z-10">
+      {/* Predator: the hunt strip replaces the XP/HP rows entirely. */}
+      {predator && (
+        // Narrower than the 4xl default so the strip never runs under the
+        // respawn panel parked in the top-right corner.
+        <div className="flex flex-col gap-2 w-full max-w-[min(56rem,calc(100vw-13rem))] mx-auto">
+          <div className="flex items-center gap-3">
+            <div className="glass-panel px-3 py-1 rounded-md text-xs font-bold text-rose-300 font-mono-numbers shrink-0 border border-rose-500/30">
+              猎物
+            </div>
+            <div className="relative flex-1 h-3.5 bg-slate-900/90 rounded-full overflow-hidden border border-rose-900/60">
+              <div
+                className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-150 rounded-full"
+                style={{
+                  width: `${Math.max(0, Math.min(100, (predator.heroHp / predator.heroMaxHp) * 100))}%`,
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono-numbers text-slate-200">
+                {predator.heroHp} / {predator.heroMaxHp}
+              </div>
+            </div>
+            <span
+              className={`text-[10px] font-mono-numbers px-2 py-1 rounded border ${
+                predator.desperate
+                  ? 'text-rose-300 bg-rose-950/70 border-rose-500/40'
+                  : 'text-slate-400 bg-slate-900/70 border-slate-700/60'
+              }`}
+            >
+              {predator.desperate ? '背水' : '常态'}
+            </span>
+          </div>
+
+          {/* Your own hull: one soldier's HP, shown as a bar, not a number */}
+          <div className="flex items-center gap-3">
+            <div className="glass-panel px-3 py-1 rounded-md text-xs font-bold text-emerald-300 font-mono-numbers shrink-0 border border-emerald-500/30">
+              {predator.formNameZh}
+            </div>
+            <div className="relative w-56 sm:w-72 h-3.5 bg-slate-900/90 rounded-full overflow-hidden border border-emerald-900/60">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-lime-300 transition-all duration-150 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                style={{
+                  width: `${Math.max(0, Math.min(100, (predator.pilotHp / predator.pilotMaxHp) * 100))}%`,
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono-numbers text-slate-100">
+                {predator.pilotHp} / {predator.pilotMaxHp} HP
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] font-mono-numbers">
+              {predator.preyUpgrades.length > 0 && (
+                <span
+                  className={`px-2 py-1 rounded border ${
+                    predator.nextBuffIn >= PREY_BUFF_INTERVAL - PREY_BUFF_CALLOUT
+                      ? 'text-purple-200 bg-purple-950/70 border-purple-500/50 animate-pulse'
+                      : 'text-slate-400 bg-slate-900/70 border-slate-700/60'
+                  }`}
+                >
+                  猎物拿走 {predator.preyUpgrades[predator.preyUpgrades.length - 1].nameZh} Lv.
+                  {predator.preyUpgrades[predator.preyUpgrades.length - 1].level}
+                </span>
+              )}
+              <span className="text-slate-500 px-1 py-1">
+                下一条 {predator.nextBuffIn.toFixed(0)}s
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 glass-panel px-3 py-1.5 rounded-lg border border-slate-700/50 text-[11px] font-mono-numbers">
+            <span className="text-slate-300">
+              同族士兵 {predator.swarmCount}/{predator.swarmCap}
+            </span>
+            <span className="text-slate-300">剩余 {formatTime(predator.timeLeft)}</span>
+            <span className="text-slate-400">换怪 {predator.morphs}</span>
+            <span className="text-slate-400">
+              猎物强化 ×{predator.preyUpgrades.length}
+            </span>
+            <button
+              onClick={onPause}
+              className="pointer-events-auto p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-cyan-400 border border-slate-700/60 transition-colors cursor-pointer"
+              title="暂停游戏（查看猎物强化）"
+            >
+              <Pause size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Bar: XP, Timer, Stats, Controls */}
-      <div className="flex flex-col gap-2 w-full max-w-4xl mx-auto">
+      <div className={predator ? 'hidden' : 'flex flex-col gap-2 w-full max-w-4xl mx-auto'}>
         {/* Full-width Top XP Bar */}
         <div className="w-full relative flex items-center gap-3">
           <div className="glass-panel px-3 py-1 rounded-md text-xs font-bold text-cyan-300 font-mono-numbers shrink-0 border border-cyan-500/30">
@@ -217,6 +309,8 @@ export const HUD: React.FC<HUDProps> = ({
       <div className="flex items-end justify-between w-full max-w-4xl mx-auto gap-4">
         {/* Active Weapon Passives */}
         <div className="glass-panel px-3 py-2 rounded-lg border border-slate-800/80 flex items-center gap-3 font-mono-numbers text-xs text-slate-400 flex-wrap">
+          {/* In Predator these numbers belong to the far side, not to you. */}
+          {predator && <span className="text-rose-300 font-bold">猎物火力</span>}
           {twinStats && (
             <>
               <div className="flex items-center gap-1 font-semibold" style={{ color: twinDef!.color }}>
@@ -320,7 +414,7 @@ export const HUD: React.FC<HUDProps> = ({
             <div className="text-left relative z-10">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-white tracking-tight">
-                  {char.activeSkill.nameZh}
+                  {predator ? predator.ultNameZh : char.activeSkill.nameZh}
                   {twinDef && (
                     <span className="text-slate-400 font-normal">
                       {' + '}
@@ -333,7 +427,13 @@ export const HUD: React.FC<HUDProps> = ({
                 </span>
               </div>
               <div className="text-[11px] font-mono-numbers">
-                {player.isSkillActive ? (
+                {predator ? (
+                  predator.ultReadyIn <= 0 ? (
+                    <span className="text-emerald-400 font-semibold">就绪 (READY)</span>
+                  ) : (
+                    <span className="text-slate-400">冷却 {predator.ultReadyIn.toFixed(1)}s</span>
+                  )
+                ) : player.isSkillActive ? (
                   <span className="text-cyan-300 font-bold">
                     激活中 ({player.skillActiveTimer.toFixed(1)}s)
                   </span>

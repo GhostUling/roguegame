@@ -27,9 +27,13 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
               src/game/engine/collision.ts 玩家弹 / 敌弹 / 接触的命中判定（纯几何）
               src/game/engine/damage.ts  状态易伤与护盾减伤（纯算式）
               src/game/engine/drops.ts   得分、晶石掉落规格、经验曲线、拾取速度（纯数值）
+              src/game/engine/preyAi.ts  捕食者：猎物走位与技能时机，生存第一、不认识玩家（纯策略）
+              src/game/engine/swarm.ts   捕食者：士兵咬合冷却/份额、波次数量（纯数值）
+              src/game/engine/preyBuff.ts 捕食者：猎物的强化节拍与抽取（纯逻辑，不造数值）
 共享层       src/game/core/            引擎 / UI / 测试都读的模型与规则
               types.ts（共享类型）/ modes.ts（模式表）/ pilots.ts（双机换算）
               player.ts（开局构造）/ enemyTypes.ts（敌人表 + 波次）
+              predatorForms.ts（捕食者七形态 / 复活槽候选）
 卡牌层       src/game/cards/           卡牌子系统：卡池数据 + 图鉴文案 + 分发
               upgrades.ts / overflowUpgrades.ts / upgradePools.ts / codexData.ts
 系统层       src/game/systems/         一卡一系统的纯数值与算式（一律有单测）
@@ -49,11 +53,15 @@ UI 层        src/components/*.tsx      只渲染与回调，不含游戏规则
 | 文件 | 职责 | 不该放什么 |
 |---|---|---|
 | `App.tsx` | 界面状态机（title / character_select / playing / paused / levelup / gameover）、持有 `GameEngine` 与摇杆、把 `player` 状态传给 HUD | 游戏数值、碰撞、AI |
-| `engine/index.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线 + 3 处子步（2b 溢流卡牌时钟 / 5b 射击回响与裂空光矛 / 7b 炮台·分身·友军）。主干：技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复 | 绘制细节（在 renderer）、数值表（在 core / cards） |
+| `engine/index.ts` | 全部可变游戏状态；`update()` 里 18 步固定流水线 + 4 处子步（2b 溢流卡牌时钟 / 4b 猎物强化节拍 / 5b 射击回响与裂空光矛 / 7b 炮台·分身·友军）。主干：技能计时 → 机体时钟 → Boss 排程 → 移动 → 开火 → 召唤物 → 投射物 → 刷怪 → 敌人 AI → 掉落 → VFX → 相机抖动 → 脱战回复 | 绘制细节（在 renderer）、数值表（在 core / cards） |
 | `engine/enemyAi.ts` | `stepEnemyAi`：sniper / charger / boss 三个状态机与通用追击。只写本帧速度、状态与「想发什么弹 / 想要什么音效」，由引擎落成弹体与音频 | 索敌（哪个翼更近）、分离、接触伤害、击杀与掉落（都在 `index.ts`） |
 | `engine/collision.ts` | `circlesTouch` / `roundHitsEnemy` / `firstWingHit`：玩家弹、敌弹、机体接触的命中判定 | 命中后的伤害、火花、击退（在 `index.ts`） |
 | `engine/damage.ts` | `statusDamageMultiplier`（冰缓易伤 × 标记易伤）与 `afterDroneShield` | 扣血、音效、震屏、死亡（在 `index.ts` 的 `applyPlayerDamage`） |
 | `engine/drops.ts` | `killScore` / `gemDropFor` / `nextLevelXp` / `bankGem` / `advanceLevel` / `gemPullSpeed` / `GEM_CAP`：击杀收益与经验曲线 | 生成晶石对象、合并溢出、升级弹窗（在 `index.ts`） |
+| `engine/preyAi.ts` | 猎物这一步往哪走、是否放大招：**生存第一**——脱离接触、重伤就逃、不换角落、有余裕才保持战线并绕环。视图里**没有 pilot 字段**，它只见「最近的一具敌对机体 + 220px 内压着几具」，所以不会优先锁定玩家（纯策略，有单测） | 知道玩家是谁、开火、冷却与伤害（在 `index.ts`） |
+| `engine/swarm.ts` | 士兵每次咬的冷却与份额、每波数量、兵潮质心/围拢数（纯数值，有单测） | 数组与副作用（在 `index.ts`） |
+| `core/predatorForms.ts` | 捕食者七形态表、`pilotHpFor`/`pilotSpeedFor`/`pilotContactFor`、`bindableForms`（当前可绑定的复活形态）与 `pickRespawnForm`（死亡随机、不连任）（纯数据，有单测） | 重生位置、无敌帧的落地（在 `index.ts`） |
+| `engine/preyBuff.ts` | 捕食者猎物的强化节拍：`PREY_BUFF_INTERVAL`（30s）、`preyUpgradeCandidates` / `pickPreyUpgrade`（从没满级的本模式卡池抽一张，`PREY_EXCLUDED_KEYS` 排除只对晶石/升级有意义的 `magnet`、`gravity_siphon`）、`preyBuffCountdown`（纯逻辑，有单测） | **任何数值或效果**（全部属于 `cards/upgrades.ts`）、施加与飘字（在 `index.ts` 的 `updatePreyBuffs`） |
 | `render/renderer.ts` | `renderScene` 内的 17 个编号 pass（含超暴击全屏闪白、网格裁决的网格）+ 若干 `render*` 子函数 + `RenderState` 契约 + 辉光贴图缓存 | 任何状态修改 |
 | `core/modes.ts` | `GAME_MODES` 描述表（槽位数、机位间距、出怪倍率、同时存活上限、成长系数、是否合并血条、`manualSpawn` / `devOnly`）+ `modeOf` / `modeOfPlayer` / `modeForPilots` / `isPaired` | 模式专属的表现代码（各自写在 UI 里） |
 | `characters/<机体>.ts` | 一台机体的**全部**内容：基础属性、被动、主动技、以及它自己的 `drawXxx` 绘制函数 | 运行时状态 |
@@ -139,6 +147,14 @@ requestAnimationFrame
 3. 测试场手测：一个人 3 分钟能走完的状态检查
 4. 三关：`npm run lint` / `npm run build` / `npm test`
 
+## 捕食者（Predator）
+
+- **反转**：`player` 是被脚本操控的猎物，`enemies` 是与玩家同族的士兵，玩家本体是 `pilot`（形态由 `core/predatorForms.ts` 定义）。唯一开关是 `GAME_MODES.predator.heroPrey`。
+- **阵营**：玩家的子弹/接触只打猎物；猎物的子弹打玩家与士兵；士兵咬猎物各自 1.0s 冷却且不吃猎物无敌帧（否则 200 只共享一个窗口等于没伤害）。
+- **死亡 = 立刻换怪**：右上角 3 个复活槽（`components/RespawnSlots.tsx`，开局即可全部绑定，绑定不消耗）。`hitPilot` 打到 0 血就在同一帧 `respawnPilot()`：从已绑定槽里随机取一个（**绝不重复刚死的那个**，一槽没绑则随机取当前已解锁种类），0.8s 无敌、猎物 300px 外重生。**没有弹窗、没有 `morph` 状态、世界不会停**；强化保留；5:00 未击杀即为失败。
+- **对面每 30 秒白拿一级**：节拍与抽取在 `engine/preyBuff.ts`，**卡的数值与效果完全沿用 `cards/upgrades.ts`**——`poolForMode(mode)` 取本模式卡池，走和玩家升级同一条 `apply(player, level)`，写进同一个 `player.upgradeLevels` / `activeSlots`。猎物就是 `player` 实体，所以它拿到「终决处刑」会处决你的残血士兵、拿到棱镜炮台/分身会压制兵潮；**不要为它新造一张强化表**（违反约束 3，已经犯过一次）。这是猎物在本模式里唯一的成长来源（士兵死亡不给它经验与升级）。HUD 常驻「最新那张 + Lv」与「下一条 Xs」，暂停面板第 1 页是它当前的构筑列表、第 3 页按时间列出每次拿卡——玩家在暗处打不赢，必须看得见。
+- **标记约定例外**：本模式给**猎物**画红色锁定环（`renderer.ts` 的 `renderPreyRing`），士兵不画环（数量太大）。其余模式仍守翡翠环规则。
+- **P0 范围**：怪物强化卡池、经验/升级尚未接入；`cardPool` 暂为 `standard`，落地新池时改成 `monster`。
 ## 常见修改任务
 
 ### 改动落在哪个文件（速查）

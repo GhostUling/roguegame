@@ -26,6 +26,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   };
 
   const isNewRecord = stats.score > highScore;
+  const victory = !!stats.victory;
 
   const isTwin = isPaired(stats);
 
@@ -34,14 +35,16 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
       <div className="w-full max-w-md p-6 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-2xl space-y-6">
         {/* Title */}
         <div className="text-center space-y-1">
-          <div className="text-xs font-mono-numbers tracking-widest text-rose-400 font-bold uppercase">
-            CORE MELTDOWN // 能量耗尽
+          <div className={`text-xs font-mono-numbers tracking-widest font-bold uppercase ${victory ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {victory ? 'PREY DOWN // 猎杀完成' : 'CORE MELTDOWN // 能量耗尽'}
           </div>
           <h2 className="text-3xl font-black tracking-tight text-white">
-            几何架构崩溃
+            {victory ? '猎物已经倒下' : '几何架构崩溃'}
           </h2>
           <p className="text-xs text-slate-400">
-            你在几何风暴中奋战直至奇点瓦解
+            {victory
+              ? `你在 ${formatTime(stats.survivedTime)} 内咬穿了那台机体`
+              : '时限耗尽，猎物仍然站着'}
           </p>
         </div>
 
@@ -57,8 +60,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
           {isNewRecord && (
             <div className="text-xs font-semibold text-emerald-400 mt-1">
               ★ 刷新历史最高纪录！ ★
-            </div>
-          )}
+            </div>          )}
           {!isNewRecord && (
             <div className="text-xs text-slate-500 font-mono-numbers mt-0.5">
               历史最高: {highScore.toLocaleString()}

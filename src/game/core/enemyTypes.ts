@@ -167,6 +167,22 @@ export function pickEnemyType(elapsedSeconds: number, roll: number): SpawnableEn
 }
 
 /**
+ * Every enemy type the wave table has introduced by this much elapsed time.
+ * The Predator mode binds its respawn slots from here, so "the roster grows
+ * as the run does" stays defined in one place.
+ */
+export function unlockedEnemyTypes(elapsedSeconds: number): SpawnableEnemyType[] {
+  const seen: SpawnableEnemyType[] = [];
+  for (const bracket of SPAWN_BRACKETS) {
+    for (const [type] of bracket.picks) {
+      if (!seen.includes(type)) seen.push(type);
+    }
+    if (elapsedSeconds < bracket.until) break;
+  }
+  return seen;
+}
+
+/**
  * Hit points a freshly spawned enemy of this type gets, given the run's elapsed
  * time. `growthScale` steepens the curve for modes that need a harder late game.
  */

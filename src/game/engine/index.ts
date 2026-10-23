@@ -23,6 +23,9 @@ import {
   EchoVolley,
   Lance,
   Rift,
+  Pilot,
+  PredatorSnapshot,
+  PreyUpgradeView,
 } from '../core/types';
 import { sound } from '../infra/audio';
 import { drawCharacterShip, getCharacterDef } from '../characters';
@@ -37,7 +40,7 @@ import {
   railgunShotDamage,
 } from '../systems/drones';
 import { GameModeDef, isPaired, modeOfPlayer } from '../core/modes';
-import { findUpgrade } from '../cards/upgradePools';
+import { findUpgrade, poolForMode } from '../cards/upgradePools';
 import { HYPERCRIT_MULTIPLIER } from '../cards/overflowUpgrades';
 import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from '../systems/turrets';
 import { GRID_FLASH, GRID_STRIKE_AT, GRID_STUN, gridLineDistance, gridVerdictDamage } from '../systems/gridVerdict';
@@ -65,6 +68,30 @@ import { circlesTouch, firstWingHit, roundHitsEnemy } from './collision';
 import { afterDroneShield, statusDamageMultiplier } from './damage';
 import { GEM_CAP, advanceLevel, bankGem, gemDropFor, gemPullSpeed, killScore } from './drops';
 import { DebugEvent, pushDebugEvent } from './debugTrace';
+import {
+  PILOT_BITE_COOLDOWN,
+  ULT_BROOD_COUNT,
+  ULT_CHARGE_SECONDS,
+  ULT_LOCK_HOLD,
+  ULT_LOCK_SHARE,
+  ULT_LOCK_SPEED,
+  ULT_LOCK_TRACK,
+  ULT_LUNGE_SECONDS,
+  ULT_LUNGE_SHARE,
+  ULT_PHASE_SECONDS,
+  ULT_RING_COUNT,
+  ULT_RING_SHARE,
+  ULT_RING_SPEED,
+  ULT_SLAM_RADIUS,
+  ULT_SLAM_SHOVE,
+  createPilot,
+  formOf,
+  pickRespawnForm,
+  soldierCanBite,
+} from '../core/predatorForms';
+import { PREY_BUFF_INTERVAL, pickPreyUpgrade, preyBuffCountdown } from './preyBuff';
+import { SOLDIER_BITE_COOLDOWN, soldierBiteDamage, soldierWaveCount, swarmAround, swarmCentre } from './swarm';
+import { PRESSURE_RADIUS, stepPreyAi } from './preyAi';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -76,8 +103,17 @@ export interface GameEngineCallbacks {
     score: number;
     gameMode?: GameMode;
     twinPilotId?: CharacterId;
+    victory?: boolean;
+    timeLeft?: number;
+    morphs?: number;
+    swarmPeak?: number;
   }) => void;
-  onStatsUpdate: (player: Player, timeSeconds: number, bossWarning: boolean) => void;
+  onStatsUpdate: (
+    player: Player,
+    timeSeconds: number,
+    bossWarning: boolean,
+    predator?: PredatorSnapshot
+  ) => void;
 }
 
 export class GameEngine {
@@ -107,6 +143,23 @@ export class GameEngine {
   public echoes: EchoVolley[] = [];
   public lances: Lance[] = [];
   public rifts: Rift[] = [];
+  /** Predator: you. Null outside Predator; death swaps the form on the spot. */
+  public pilot: Pilot | null = null;
+  /** The three slots the corner panel binds. Fixed length, holes are null. */
+  public respawnSlots: (EnemyType | null)[] = [null, null, null];
+  /** Your ult rounds; they only bite the prey. */
+  public pilotRounds: Projectile[] = [];
+  private pilotBiteTimer: number = 0;
+  private preyDamage: number = 0;
+  private morphs: number = 0;
+  /** Seconds since the prey's last free level; one lands every PREY_BUFF_INTERVAL. */
+  public preyBuffTimer: number = 0;
+  /** Append-only ledger of the levels the prey took, for the HUD and pause panel. */
+  public preyUpgradeViews: PreyUpgradeView[] = [];
+  private swarmPeak: number = 0;
+  private runResult: 'none' | 'victory' | 'timeout' = 'none';
+  private preyStrafeTimer: number = 0;
+  private preyStrafeSign: number = 1;
 
   // System
   private animFrameId: number = 0;
@@ -286,7 +339,27 @@ export class GameEngine {
     this.bossWarningTimer = 0;
     this.devInvincible = false;
     this.debugEvents = [];
-    this.shakeIntensity = 0;
+    this.pilot = null;
+    this.pilotRounds = [];
+    this.pilotBiteTimer = 0;
+    this.preyDamage = 0;
+    this.morphs = 0;
+    this.respawnSlots = [null, null, null];
+    this.preyBuffTimer = 0;
+    this.preyUpgradeViews = [];
+    this.swarmPeak = 0;
+    this.runResult = 'none';
+    this.preyStrafeTimer = 0;
+    this.preyStrafeSign = 1;
+
+    // Predator inverts the cast: `player` is the scripted prey, and you are
+    // the pilot. Everything else keeps its standard meaning.
+    if (this.mode().heroPrey) {
+      const mode = this.mode();
+      this.player.maxHp = Math.round(this.player.maxHp * mode.heroHpScale);
+      this.player.hp = this.player.maxHp;
+      this.pilot = this.spawnPilotAt('chaser', this.width / 2, this.height / 2 + 220);
+    }
     this.state = 'playing';
 
     sound.resume();
@@ -367,7 +440,19 @@ export class GameEngine {
     this.shakeIntensity = Math.min(20, this.shakeIntensity + intensity);
   }
 
+  /** SPACE / the HUD button: your ult in Predator, the hull skill elsewhere. */
   public triggerActiveSkill(): boolean {
+    if (this.state !== 'playing') return false;
+    if (this.pilot) {
+      if (this.pilot.ultTimer > 0) return false;
+      this.castPilotUlt();
+      return true;
+    }
+    return this.executePreySkill();
+  }
+
+  /** The scripted prey casts its own hull ultimate on its own cooldown. */
+  private executePreySkill(): boolean {
     if (this.state !== 'playing') return false;
     if (this.player.skillCooldown > 0) return false;
 
@@ -678,6 +763,19 @@ export class GameEngine {
     this.gameClockMs += dt * 1000;
     this.pulseAnimTime += dt;
 
+    if (this.pilot) {
+      this.swarmPeak = Math.max(this.swarmPeak, this.enemies.length);
+    }
+    // Predator: the hunt ends when the clock does, prey alive or not.
+    if (
+      this.runResult === 'none' &&
+      this.mode().runDurationSec > 0 &&
+      this.gameTime >= this.mode().runDurationSec
+    ) {
+      this.finishRun(false);
+      return;
+    }
+
     // 1. Skill Timers & Cooldown
     if (this.player.isSkillActive) {
       this.player.skillActiveTimer -= dt;
@@ -783,6 +881,8 @@ export class GameEngine {
     // 4. Update Player Movement & Passives
     this.updatePlayerMovement(dt);
     this.updateOverdriveUpkeep(dt);
+    // 4b. The prey grows stronger on its own clock (Predator only).
+    this.updatePreyBuffs(dt);
 
     // 5. Auto Shoot & Barrage
     this.updateAutoShooting();
@@ -804,6 +904,9 @@ export class GameEngine {
     this.updateTurrets(dt);
     this.updateClones(dt);
     this.updateAllies(dt);
+    // 7c. Predator: your monster form and its ult rounds.
+    this.updatePilot(dt);
+    this.updatePilotRounds(dt);
 
     // 8. Update Supernova Pulse
     this.updateNovaPulse(dt);
@@ -851,7 +954,7 @@ export class GameEngine {
     // 18. Out-of-Combat Health Regeneration (only recovers HP after 3.0s without taking damage)
     this.player.timeSinceLastDamage = (this.player.timeSinceLastDamage || 0) + dt;
     const OUT_OF_COMBAT_REGEN_TIME = 3.0;
-    if (this.player.timeSinceLastDamage >= OUT_OF_COMBAT_REGEN_TIME && this.player.hp < this.player.maxHp) {
+    if (this.player.timeSinceLastDamage >= OUT_OF_COMBAT_REGEN_TIME && this.player.hp < this.player.maxHp && !this.preyDesperate()) {
       this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.player.shieldRegenRate * dt);
       if (Math.random() < 0.15 && this.particles.length < 50) {
         this.particles.push({
@@ -871,12 +974,14 @@ export class GameEngine {
       }
     }
 
-    this.callbacks.onStatsUpdate(this.player, this.gameTime, this.bossWarningActive);
+    this.callbacks.onStatsUpdate(this.player, this.gameTime, this.bossWarningActive, this.predatorSnapshot());
   }
 
   private updateBossSchedule(dt: number) {
     // The sandbox decides when a boss arrives; the schedule would add its own.
     if (this.mode().manualSpawn) return;
+    // Predator has no boss schedule: the swarm is your army, not a wave to survive.
+    if (this.mode().heroPrey) return;
 
     const bossCheckpoints = [120, 240, 360, 480];
     for (const time of bossCheckpoints) {
@@ -897,6 +1002,12 @@ export class GameEngine {
   }
 
   private updatePlayerMovement(dt: number) {
+    // The prey is not on the stick: its policy drives the same hull.
+    if (this.mode().heroPrey) {
+      this.updatePreyMovement(dt);
+      return;
+    }
+
     let dx = 0;
     let dy = 0;
 
@@ -1104,6 +1215,28 @@ export class GameEngine {
   }
 
   /**
+   * The closest hostile body around a point — a soldier or you, whichever
+   * happens to be nearer. Nothing in here knows which one you are; that is the
+   * whole rule, and it is why diving in is what gets you shot at.
+   */
+  private nearestHostile(x: number, y: number): { x: number; y: number; distSq: number } | null {
+    const nearest = this.nearestEnemy(x, y);
+    let best = nearest.enemy
+      ? { x: nearest.enemy.x, y: nearest.enemy.y, distSq: nearest.distSq }
+      : null;
+
+    const pilot = this.pilot;
+    if (pilot) {
+      const dx = pilot.x - x;
+      const dy = pilot.y - y;
+      const distSq = dx * dx + dy * dy;
+      if (!best || distSq < best.distSq) best = { x: pilot.x, y: pilot.y, distSq };
+    }
+
+    return best;
+  }
+
+  /**
    * One damage roll for the player's own fire, so the crit rule (and Hypercrit's
    * upgrade of it) exists in exactly one place. `critMultiplier` is passed in
    * because a twin pair's second wing carries its own, and `overload` is the Iota
@@ -1150,12 +1283,33 @@ export class GameEngine {
       currentFireRate = Math.max(40, Math.round(currentFireRate / (1 + this.player.comboRatePerTen * tiers)));
     }
 
+    // 背水: the prey stops kiting and starts dumping rounds.
+    if (this.preyDesperate()) {
+      currentFireRate = Math.max(60, Math.round(currentFireRate * 0.6));
+    }
+
     const lastFireTime =
       index === 0 ? this.player.lastFireTime : this.player.pilot2LastFireTime || 0;
     if (now - lastFireTime < currentFireRate) return;
 
-    const { enemy: targetEnemy, distSq: minDistSq } = this.nearestEnemy(origin.x, origin.y);
-    if (!targetEnemy) return;
+    // Predator: the hull answers whatever is closest on it — a soldier or you,
+    // whichever happens to be nearer. It is not told which one you are, so
+    // lurking at range keeps you anonymous and diving in is what paints you.
+    const nearest = this.nearestEnemy(origin.x, origin.y);
+    let hasTarget = nearest.enemy !== null;
+    let minDistSq = nearest.distSq;
+    let targetX = nearest.enemy ? nearest.enemy.x : 0;
+    let targetY = nearest.enemy ? nearest.enemy.y : 0;
+    if (this.mode().heroPrey) {
+      const threat = this.nearestHostile(origin.x, origin.y);
+      if (threat) {
+        hasTarget = true;
+        minDistSq = threat.distSq;
+        targetX = threat.x;
+        targetY = threat.y;
+      }
+    }
+    if (!hasTarget) return;
     const maxRangeSq = (Math.max(this.width, this.height) * 1.2) ** 2;
     if (minDistSq > maxRangeSq) return;
 
@@ -1165,7 +1319,7 @@ export class GameEngine {
       this.player.pilot2LastFireTime = now;
     }
 
-    const baseAngle = Math.atan2(targetEnemy.y - origin.y, targetEnemy.x - origin.x);
+    const baseAngle = Math.atan2(targetY - origin.y, targetX - origin.x);
     if (index === 0) {
       this.player.angle = baseAngle;
     } else {
@@ -1730,6 +1884,436 @@ export class GameEngine {
    * fired from. The replay carries no crit and is marked secondary, so a replay
    * cannot feed the cards that spawn more rounds on a hit.
    */
+  /* ----------------------------------------------------------------------- */
+  /*                         PREDATOR: YOU AND THE HUNT                       */
+  /* ----------------------------------------------------------------------- */
+
+  /** The prey is not on the stick: its policy drives the same hull. */
+  private updatePreyMovement(dt: number) {
+    const centre = swarmCentre(this.enemies);
+    const threat = this.nearestHostile(this.player.x, this.player.y);
+    const pilot = this.pilot;
+
+    // What is leaning on it, counted the same way for soldiers and for you.
+    let pressure = swarmAround(this.enemies, this.player.x, this.player.y, PRESSURE_RADIUS);
+    if (pilot) {
+      const dx = pilot.x - this.player.x;
+      const dy = pilot.y - this.player.y;
+      if (dx * dx + dy * dy <= PRESSURE_RADIUS * PRESSURE_RADIUS) pressure += 1;
+    }
+
+    const order = stepPreyAi(
+      {
+        x: this.player.x,
+        y: this.player.y,
+        threatX: threat ? threat.x : null,
+        threatY: threat ? threat.y : null,
+        pressure,
+        swarmCentreX: centre.x,
+        swarmCentreY: centre.y,
+        hpFrac: this.player.maxHp > 0 ? this.player.hp / this.player.maxHp : 1,
+        width: this.width,
+        height: this.height,
+        strafeTimer: this.preyStrafeTimer,
+        strafeSign: this.preyStrafeSign,
+      },
+      this.player.speed,
+      dt
+    );
+
+    this.preyStrafeTimer = order.strafeTimer;
+    this.preyStrafeSign = order.strafeSign;
+    this.player.vx = order.vx;
+    this.player.vy = order.vy;
+    this.player.x += order.vx * (dt * 60);
+    this.player.y += order.vy * (dt * 60);
+    const margin = this.player.radius + 6;
+    this.player.x = Math.max(margin, Math.min(this.width - margin, this.player.x));
+    this.player.y = Math.max(margin, Math.min(this.height - margin, this.player.y));
+    this.player.angle = Math.atan2(order.vy, order.vx);
+
+    if (order.castSkill) this.executePreySkill();
+    if (this.player.invincibleTimer > 0) this.player.invincibleTimer -= dt;
+  }
+
+  /** 背水: below 35% the prey stops healing and fires much faster. */
+  private preyDesperate(): boolean {
+    return this.mode().heroPrey && this.player.hp < this.player.maxHp * 0.35;
+  }
+
+  /** Your monster form: movement, ult timer, lock-shot and the bite. */
+  private updatePilot(dt: number) {
+    const pilot = this.pilot;
+    if (!pilot) return;
+
+    pilot.ultTimer = Math.max(0, pilot.ultTimer - dt);
+    pilot.invulnTimer = Math.max(0, pilot.invulnTimer - dt);
+    pilot.phaseTimer = Math.max(0, pilot.phaseTimer - dt);
+    this.pilotBiteTimer = Math.max(0, this.pilotBiteTimer - dt);
+
+    let dx = 0;
+    let dy = 0;
+    if (this.keys['w'] || this.keys['arrowup']) dy -= 1;
+    if (this.keys['s'] || this.keys['arrowdown']) dy += 1;
+    if (this.keys['a'] || this.keys['arrowleft']) dx -= 1;
+    if (this.keys['d'] || this.keys['arrowright']) dx += 1;
+    if (Math.abs(this.joystickVector.x) > 0.05 || Math.abs(this.joystickVector.y) > 0.05) {
+      dx = this.joystickVector.x;
+      dy = this.joystickVector.y;
+    }
+
+    if (pilot.dashTimer > 0) {
+      pilot.dashTimer -= dt;
+      pilot.x += pilot.dashDirX * pilot.speed * 3.8 * (dt * 60);
+      pilot.y += pilot.dashDirY * pilot.speed * 3.8 * (dt * 60);
+    } else {
+      const len = Math.hypot(dx, dy);
+      if (len > 0.01) {
+        const normalizer = len > 1 ? 1 / len : 1;
+        pilot.vx = dx * normalizer * pilot.speed;
+        pilot.vy = dy * normalizer * pilot.speed;
+        pilot.angle = Math.atan2(dy, dx);
+      } else {
+        pilot.vx *= 0.8;
+        pilot.vy *= 0.8;
+      }
+      pilot.x += pilot.vx * (dt * 60);
+      pilot.y += pilot.vy * (dt * 60);
+    }
+
+    const margin = pilot.radius + 4;
+    pilot.x = Math.max(margin, Math.min(this.width - margin, pilot.x));
+    pilot.y = Math.max(margin, Math.min(this.height - margin, pilot.y));
+    pilot.rotation += pilot.rotSpeed * dt;
+
+    // 蓄力锁线: track, then freeze the line, then fire down it.
+    const form = formOf(pilot.form);
+    if (form.kind === 'lockshot' && pilot.lockTimer > 0) {
+      pilot.lockTimer += dt;
+      if (pilot.lockTimer < ULT_LOCK_TRACK) {
+        pilot.aimAngle = Math.atan2(this.player.y - pilot.y, this.player.x - pilot.x);
+        pilot.aimLocked = false;
+      } else if (!pilot.aimLocked) {
+        pilot.aimLocked = true;
+        sound.playSniperLock();
+      }
+      if (pilot.lockTimer >= ULT_LOCK_TRACK + ULT_LOCK_HOLD) {
+        pilot.lockTimer = 0;
+        this.firePilotRound(
+          pilot.aimAngle,
+          ULT_LOCK_SPEED,
+          Math.round(pilot.contactDamage * ULT_LOCK_SHARE)
+        );
+      }
+    }
+
+    if (pilot.phaseTimer > 0) return;
+
+    const preyDx = this.player.x - pilot.x;
+    const preyDy = this.player.y - pilot.y;
+    if (
+      this.pilotBiteTimer <= 0 &&
+      circlesTouch(preyDx * preyDx + preyDy * preyDy, pilot.radius, this.player.radius)
+    ) {
+      this.pilotBiteTimer = PILOT_BITE_COOLDOWN;
+      const share = pilot.dashTimer > 0 ? ULT_LUNGE_SHARE : 1;
+      this.damagePrey(Math.round(pilot.contactDamage * share));
+      sound.playHit();
+    }
+  }
+
+  private updatePilotRounds(dt: number) {
+    for (let i = this.pilotRounds.length - 1; i >= 0; i--) {
+      const r = this.pilotRounds[i];
+      r.x += r.vx * (dt * 60);
+      r.y += r.vy * (dt * 60);
+      r.life += dt;
+
+      const dx = this.player.x - r.x;
+      const dy = this.player.y - r.y;
+      if (circlesTouch(dx * dx + dy * dy, r.radius, this.player.radius)) {
+        this.pilotRounds.splice(i, 1);
+        this.damagePrey(r.damage);
+        continue;
+      }
+      if (
+        r.life >= r.maxLife ||
+        r.x < -40 || r.x > this.width + 40 ||
+        r.y < -40 || r.y > this.height + 40
+      ) {
+        this.pilotRounds.splice(i, 1);
+      }
+    }
+  }
+
+  /** The form's ult, on the SPACE key. Cooldowns come from the form table. */
+  private castPilotUlt() {
+    const pilot = this.pilot;
+    if (!pilot) return;
+    const form = formOf(pilot.form);
+    pilot.ultTimer = form.ultCooldown;
+    const aim = Math.atan2(this.player.y - pilot.y, this.player.x - pilot.x);
+
+    switch (form.kind) {
+      case 'lunge':
+        pilot.dashDirX = Math.cos(aim);
+        pilot.dashDirY = Math.sin(aim);
+        pilot.dashTimer = ULT_LUNGE_SECONDS;
+        sound.playChargerDash();
+        break;
+      case 'phase':
+        pilot.phaseTimer = ULT_PHASE_SECONDS;
+        sound.playClick(true);
+        break;
+      case 'slam': {
+        const dx = this.player.x - pilot.x;
+        const dy = this.player.y - pilot.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < ULT_SLAM_RADIUS) {
+          this.damagePrey(Math.round(pilot.contactDamage * 1.2));
+          if (dist > 1) {
+            const margin = this.player.radius + 6;
+            this.player.x = Math.max(margin, Math.min(this.width - margin, this.player.x + (dx / dist) * ULT_SLAM_SHOVE));
+            this.player.y = Math.max(margin, Math.min(this.height - margin, this.player.y + (dy / dist) * ULT_SLAM_SHOVE));
+          }
+        }
+        this.shockwaves.push({
+          id: Math.random(),
+          x: pilot.x,
+          y: pilot.y,
+          radius: 12,
+          maxRadius: ULT_SLAM_RADIUS,
+          color: '#fb7185',
+          width: 4,
+          life: 0,
+          maxLife: 0.35,
+        });
+        this.triggerScreenShake(6);
+        sound.playExplosion(false);
+        break;
+      }
+      case 'lockshot':
+        pilot.lockTimer = 0.0001;
+        pilot.aimLocked = false;
+        sound.playSniperAim();
+        break;
+      case 'charge':
+        pilot.dashDirX = Math.cos(aim);
+        pilot.dashDirY = Math.sin(aim);
+        pilot.dashTimer = ULT_CHARGE_SECONDS;
+        sound.playChargerDash();
+        break;
+      case 'brood':
+        for (let i = 0; i < ULT_BROOD_COUNT; i++) {
+          const a = (i / ULT_BROOD_COUNT) * Math.PI * 2;
+          this.createEnemy('speeder', pilot.x + Math.cos(a) * 24, pilot.y + Math.sin(a) * 24);
+        }
+        sound.playClick(true);
+        break;
+      case 'ring':
+        for (let i = 0; i < ULT_RING_COUNT; i++) {
+          this.firePilotRound(
+            (i / ULT_RING_COUNT) * Math.PI * 2,
+            ULT_RING_SPEED,
+            Math.round(pilot.contactDamage * ULT_RING_SHARE)
+          );
+        }
+        sound.playLaserShot();
+        break;
+    }
+  }
+
+  private firePilotRound(angle: number, speed: number, damage: number) {
+    const pilot = this.pilot;
+    if (!pilot) return;
+    this.pilotRounds.push({
+      id: this.nextProjId++,
+      x: pilot.x,
+      y: pilot.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      damage,
+      pierce: 1,
+      radius: 5,
+      color: '#fb7185',
+      trail: [],
+      isCrit: false,
+      life: 0,
+      maxLife: 1.6,
+      hitEnemyIds: new Set(),
+    });
+  }
+
+  /** Damage that lands on the prey. Its shields are card-side and absent here. */
+  private damagePrey(amount: number) {
+    this.player.hp -= amount;
+    this.preyDamage += amount;
+    this.player.timeSinceLastDamage = 0;
+    this.triggerScreenShake(Math.min(6, 2 + amount / 20));
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(this.player.x, this.player.y - 18, `-${amount}`, '#fb7185', false);
+    }
+    if (this.player.hp <= 0) this.handlePlayerDeath();
+  }
+
+  /** Damage that lands on you. Phase Stutter's ult makes it pass through. */
+  private hitPilot(amount: number) {
+    const pilot = this.pilot;
+    if (!pilot || pilot.invulnTimer > 0 || pilot.phaseTimer > 0) return;
+    pilot.hp -= amount;
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(pilot.x, pilot.y - 14, `-${amount}`, '#f87171', false);
+    }
+    this.triggerScreenShake(2);
+    if (pilot.hp <= 0) this.respawnPilot();
+  }
+
+  /** A soldier bites the prey on its own clock, ignoring the hull i-frames. */
+  private soldierBitesPrey(e: Enemy) {
+    if (!soldierCanBite(e)) return;
+    e.contactCooldown = SOLDIER_BITE_COOLDOWN;
+    const bite = soldierBiteDamage(e);
+    this.player.hp -= bite;
+    this.player.timeSinceLastDamage = 0;
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(this.player.x, this.player.y - 16, `-${bite}`, '#fca5a5', false);
+    }
+    if (this.player.hp <= 0) this.handlePlayerDeath();
+  }
+
+  /** Forms bound to the corner slots, in slot order, holes dropped. */
+  private boundRespawnForms(): EnemyType[] {
+    return this.respawnSlots.filter((form): form is EnemyType => form !== null);
+  }
+
+  /** Put you in a new body, clamped to the field, on the current growth curve. */
+  private spawnPilotAt(form: EnemyType, x: number, y: number): Pilot {
+    const mode = this.mode();
+    this.pilot = createPilot(form, {
+      x: Math.max(40, Math.min(this.width - 40, x)),
+      y: Math.max(40, Math.min(this.height - 40, y)),
+      elapsed: this.gameTime,
+      speedScale: mode.pilotSpeedScale,
+      contactScale: mode.contactDamageScale,
+      growthScale: this.enemyGrowthScale(),
+    });
+    return this.pilot;
+  }
+
+  /**
+   * Death is a form change, not a loss, and not a screen either: you wake up
+   * straight away in one of the forms you bound to the corner slots, 300px off
+   * the prey, with the usual i-frames. The hunt never stops for it.
+   */
+  private respawnPilot() {
+    const lost = this.pilot?.form ?? 'chaser';
+    const form = pickRespawnForm(this.boundRespawnForms(), lost, this.gameTime, Math.random);
+    this.morphs++;
+    const angle = Math.random() * Math.PI * 2;
+    const pilot = this.spawnPilotAt(
+      form,
+      this.player.x + Math.cos(angle) * 300,
+      this.player.y + Math.sin(angle) * 300
+    );
+    this.pilotRounds = [];
+    sound.playUpgrade();
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(pilot.x, pilot.y - 20, ENEMY_TYPES[form].nameZh, ENEMY_TYPES[form].strokeColor, true);
+    }
+  }
+
+  /** The corner panel writes a slot; `null` empties it again. */
+  public bindRespawnSlot(index: number, form: EnemyType | null) {
+    if (index < 0 || index >= this.respawnSlots.length) return;
+    this.respawnSlots[index] = form;
+  }
+
+  /**
+   * The prey's own escalation: one free level out of the run's card pool every
+   * PREY_BUFF_INTERVAL seconds, applied through the same `apply(player, level)`
+   * path the level-up uses. In this mode the prey *is* the `player` entity, so
+   * the 25 standard cards are its buff list — no second table of numbers.
+   */
+  private updatePreyBuffs(dt: number) {
+    if (!this.mode().heroPrey) return;
+    this.preyBuffTimer += dt;
+    if (this.preyBuffTimer < PREY_BUFF_INTERVAL) return;
+    this.preyBuffTimer -= PREY_BUFF_INTERVAL;
+
+    const def = pickPreyUpgrade(poolForMode(this.mode()), this.player, Math.random);
+    if (!def) return; // the whole pool is maxed; nothing left to hand out
+
+    const levels = this.player.upgradeLevels;
+    const nextLevel = (levels[def.key] || 0) + 1;
+    def.apply(this.player, nextLevel);
+    levels[def.key] = nextLevel;
+    if (!this.player.activeSlots) this.player.activeSlots = [];
+    if (!this.player.activeSlots.includes(def.key)) this.player.activeSlots.push(def.key);
+    this.preyUpgradeViews.push({
+      key: def.key,
+      nameZh: def.nameZh,
+      level: nextLevel,
+      atTime: this.gameTime,
+    });
+
+    if (this.floatingTexts.length < 20) {
+      this.addFloatingText(
+        this.player.x,
+        this.player.y - 34,
+        `${def.nameZh} Lv.${nextLevel}`,
+        '#c084fc',
+        true
+      );
+    }
+    sound.playSkillReady();
+  }
+
+  /** The prey was brought down, or the hunt clock ran out. One ending each. */
+  private finishRun(victory: boolean) {
+    if (this.runResult !== 'none') return;
+    this.runResult = victory ? 'victory' : 'timeout';
+    this.state = 'gameover';
+    this.triggerScreenShake(victory ? 18 : 8);
+    sound.playExplosion(true);
+    const mode = this.mode();
+    this.callbacks.onGameOver({
+      survivedTime: Math.floor(this.gameTime),
+      finalLevel: this.player.level,
+      enemiesKilled: this.player.kills,
+      damageDealt: Math.round(this.preyDamage),
+      score: this.player.score,
+      victory,
+      timeLeft: mode.runDurationSec > 0 ? Math.max(0, Math.ceil(mode.runDurationSec - this.gameTime)) : 0,
+      morphs: this.morphs,
+      swarmPeak: this.swarmPeak,
+    });
+  }
+
+  /** What the Predator HUD reads; undefined in every other mode. */
+  private predatorSnapshot(): PredatorSnapshot | undefined {
+    const pilot = this.pilot;
+    if (!pilot) return undefined;
+    const mode = this.mode();
+    const form = formOf(pilot.form);
+    return {
+      heroHp: Math.max(0, Math.round(this.player.hp)),
+      heroMaxHp: Math.round(this.player.maxHp),
+      desperate: this.preyDesperate(),
+      swarmCount: this.enemies.length,
+      swarmCap: mode.maxAlive,
+      swarmPeak: this.swarmPeak,
+      formNameZh: ENEMY_TYPES[pilot.form].nameZh,
+      ultNameZh: form.ultNameZh,
+      ultReadyIn: pilot.ultTimer,
+      pilotHp: Math.max(0, Math.round(pilot.hp)),
+      pilotMaxHp: Math.round(pilot.maxHp),
+      morphs: this.morphs,
+      timeLeft: mode.runDurationSec > 0 ? Math.max(0, Math.ceil(mode.runDurationSec - this.gameTime)) : 0,
+      respawnSlots: this.respawnSlots.slice(),
+      preyUpgrades: this.preyUpgradeViews,
+      nextBuffIn: preyBuffCountdown(this.preyBuffTimer),
+    };
+  }
   private updateEchoes(dt: number) {
     for (let i = this.echoes.length - 1; i >= 0; i--) {
       const e = this.echoes[i];
@@ -2394,6 +2978,17 @@ export class GameEngine {
         }
       }
 
+      // Predator: the prey's own rounds are hostile to you. Soldiers took
+      // them in the loop above; this is the same round reaching the pilot.
+      if (this.pilot && !despawn) {
+        const hx = this.pilot.x - p.x;
+        const hy = this.pilot.y - p.y;
+        if (circlesTouch(hx * hx + hy * hy, p.radius, this.pilot.radius)) {
+          this.hitPilot(p.damage);
+          despawn = true;
+        }
+      }
+
       if (
         p.x < -40 ||
         p.x > this.width + 40 ||
@@ -2839,8 +3434,11 @@ export class GameEngine {
     if (this.nextWaveTimer >= spawnInterval) {
       this.nextWaveTimer = 0;
       const type = pickEnemyType(this.gameTime, Math.random());
+      const count = mode.heroPrey
+        ? soldierWaveCount(mode.spawnMultiplier, mode.swarmMultiplier, this.enemies.length, mode.maxAlive)
+        : mode.spawnMultiplier;
 
-      for (let i = 0; i < mode.spawnMultiplier; i++) {
+      for (let i = 0; i < count; i++) {
         this.spawnEnemy(type);
       }
     }
@@ -2990,6 +3588,7 @@ export class GameEngine {
 
       if (e.hitFlashTimer > 0) e.hitFlashTimer -= dt;
       if (e.attackCooldown && e.attackCooldown > 0) e.attackCooldown -= dt;
+      if (e.contactCooldown && e.contactCooldown > 0) e.contactCooldown -= dt;
 
       // Cryo freeze slow calculation
       let currentSlow = 1.0;
@@ -3062,14 +3661,16 @@ export class GameEngine {
       e.rotation += e.rotSpeed * dt * currentSlow;
 
       // Player melee collision — either wing counts as a contact
+      const heroPrey = this.mode().heroPrey;
       const wingContact =
         circlesTouch(d1Sq, this.player.radius, e.radius) ||
         (isTwin && circlesTouch(d2Sq, this.player.radius, e.radius));
       if (wingContact) {
+        if (heroPrey) this.soldierBitesPrey(e);
         // Aegis Theta rams: whatever it touches eats kinetic damage on top of
         // whatever the contact costs the hull. Mid-charge it hits for 300% — and
         // the charge carries its own i-frames, so that one is free.
-        if (this.hasPilot('theta_aegis')) {
+        if (!heroPrey && this.hasPilot('theta_aegis')) {
           const charging = this.player.chargeTimer > 0;
           const ramDmg = Math.round(this.player.bulletDamage * (charging ? 3.0 : 1.2));
           const away = Math.atan2(e.y - this.player.y, e.x - this.player.x);
@@ -3084,7 +3685,7 @@ export class GameEngine {
           sound.playHit();
         }
 
-        if (this.player.naniteShieldActive) {
+        if (!heroPrey && this.player.naniteShieldActive) {
           this.player.naniteShieldActive = false;
           this.player.naniteShieldTimer = 0;
           this.player.timeSinceLastDamage = 0;
@@ -3100,7 +3701,7 @@ export class GameEngine {
             maxLife: 0.25,
           });
           sound.playClick(true);
-        } else if (this.player.invincibleTimer <= 0 && !this.devInvincible) {
+        } else if (!heroPrey && this.player.invincibleTimer <= 0 && !this.devInvincible) {
           let incomingDmg = afterDroneShield(e.damage, this.player);
           if (this.hasPilot('beta_phalanx')) {
             incomingDmg = Math.round(incomingDmg * 0.8);
@@ -3120,8 +3721,11 @@ export class GameEngine {
 
   private killEnemy(e: Enemy, index: number) {
     this.enemies.splice(index, 1);
-    this.player.kills++;
-    this.player.score += killScore(e);
+    const soldierDeath = this.mode().heroPrey;
+    if (!soldierDeath) {
+      this.player.kills++;
+      this.player.score += killScore(e);
+    }
 
     this.triggerScreenShake(e.isBoss ? 12 : 3);
     sound.playExplosion(e.isBoss);
@@ -3187,6 +3791,10 @@ export class GameEngine {
         }
       }
     }
+
+    // Predator: a soldier dying is just a soldier dying — no loot, no cards,
+    // no experience for the prey. The hive split above already ran.
+    if (soldierDeath) return;
 
     // Epsilon Carrier Passive: 40% chance on kill to drop +2 HP nanite heal
     if (this.hasPilot('epsilon_carrier') && Math.random() < 0.4) {
@@ -3455,6 +4063,11 @@ export class GameEngine {
   }
 
   private handlePlayerDeath() {
+    // In Predator this callback is the *prey* dying: the hunt is won.
+    if (this.mode().heroPrey) {
+      this.finishRun(true);
+      return;
+    }
     this.state = 'gameover';
     this.triggerScreenShake(18);
     sound.playExplosion(true);

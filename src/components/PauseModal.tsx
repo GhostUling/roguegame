@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Player } from '../game/core/types';
+import { Player, PredatorSnapshot } from '../game/core/types';
 import { sound } from '../game/infra/audio';
+import { PREY_BUFF_INTERVAL } from '../game/engine/preyBuff';
 import { findUpgrade } from '../game/cards/upgradePools';
 import { getCharacterDef } from '../game/characters';
 import { isPaired } from '../game/core/modes';
@@ -35,6 +36,8 @@ interface PauseModalProps {
   player: Player;
   upgradeLevels: Record<string, number>;
   gameTime?: number;
+  /** Predator only: the hunt snapshot, for the prey's buff ledger. */
+  predator?: PredatorSnapshot | null;
   isMuted: boolean;
   onToggleMute: () => void;
   /** Test switch: level-up rerolls stop consuming the run's reroll count. */
@@ -53,6 +56,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   player,
   upgradeLevels,
   gameTime = 0,
+  predator = null,
   isMuted,
   onToggleMute,
   infiniteReroll,
@@ -64,7 +68,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onHome,
   onOpenCodex,
 }) => {
-  const [activeTab, setActiveTab] = useState<'upgrades' | 'stats'>('upgrades');
+  const [activeTab, setActiveTab] = useState<'upgrades' | 'stats' | 'prey'>('upgrades');
 
   const charDef = getCharacterDef(player.characterId);
   const twinDef = isPaired(player) ? getCharacterDef(player.twinPilotId!) : null;
@@ -225,7 +229,9 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             }`}
           >
             <Layers size={15} />
-            <span>已装载强化列表 ({upgradeEntries.length})</span>
+            <span>
+              {predator ? '猎物已拿走强化' : '已装载强化列表'} ({upgradeEntries.length})
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('stats')}
@@ -236,8 +242,24 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             }`}
           >
             <Gauge size={15} />
-            <span>实时机体数值面板 (含无人机与攻速)</span>
+            <span>
+              {predator ? '猎物机体数值面板' : '实时机体数值面板 (含无人机与攻速)'}
+            </span>
           </button>
+
+          {predator && (
+            <button
+              onClick={() => setActiveTab('prey')}
+              className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'prey'
+                  ? 'border-purple-400 text-purple-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Activity size={15} />
+              <span>猎物强化记录 ({predator.preyUpgrades.length})</span>
+            </button>
+          )}
 
           {onOpenCodex && (
             <button
@@ -263,8 +285,14 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                   <div className="w-12 h-12 mx-auto rounded-full bg-slate-800/60 flex items-center justify-center text-slate-500">
                     <Layers size={22} />
                   </div>
-                  <h4 className="text-sm font-bold text-slate-300">尚未选择任何升级强化</h4>
-                  <p className="text-xs text-slate-500">击败敌人拾取晶体升级后，将在此展示已获得的全部强化与效果加成</p>
+                  <h4 className="text-sm font-bold text-slate-300">
+                    {predator ? '猎物还没有拿到强化' : '尚未选择任何升级强化'}
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    {predator
+                      ? `它不需要升级：每 ${PREY_BUFF_INTERVAL} 秒直接从这张表里白拿一级。`
+                      : '击败敌人拾取晶体升级后，将在此展示已获得的全部强化与效果加成'}
+                  </p>
                   {onOpenCodex && (
                     <button
                       onClick={() => onOpenCodex()}
@@ -355,7 +383,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                 </div>
               )}
             </div>
-          ) : (
+          ) : activeTab === 'stats' ? (
             /* Detailed Real-time Stats Panel */
             <div className="space-y-4">
               {/* 1. Main Weapon & Ballistics */}
@@ -670,6 +698,85 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                 </div>
               </div>
             </div>
+          ) : (
+            /* Predator: what the prey has grown into. The ledger only names the
+               card and its level — the effect text is the card's own copy. */
+            predator && (
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-slate-950/70 border border-purple-500/30 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-purple-400 font-bold text-xs uppercase tracking-wider">
+                      <Activity size={14} />
+                      <span>猎物强化时间线 (Prey Escalation)</span>
+                    </div>
+                    <div className="text-[11px] font-mono-numbers text-slate-400">
+                      每 {PREY_BUFF_INTERVAL}s 白拿一级 · 下一条 {predator.nextBuffIn.toFixed(0)}s
+                    </div>
+                  </div>
+
+                  {predator.preyUpgrades.length === 0 ? (
+                    <p className="text-xs text-slate-500">
+                      还没有。开局的前 {PREY_BUFF_INTERVAL} 秒是纯粹的你 vs 纯粹的机体，之后它每 {PREY_BUFF_INTERVAL}{' '}
+                      秒从标准卡池里白拿一级（和你升级抽的是同一张表）。
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {predator.preyUpgrades.map((entry, index) => {
+                        const def = findUpgrade(entry.key);
+                        return (
+                          <div
+                            key={`${entry.key}-${index}`}
+                            className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-900/80 border border-purple-900/40 text-xs"
+                          >
+                            <span className="font-mono-numbers text-slate-500 w-12 shrink-0">
+                              {formatTime(entry.atTime)}
+                            </span>
+                            <span className="font-bold text-purple-200 w-32 shrink-0">
+                              {entry.nameZh} Lv.{entry.level}
+                            </span>
+                            <span className="text-slate-400 font-mono truncate">
+                              {def?.statDiffText(player, entry.level) ?? entry.key}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2 text-xs text-slate-400">
+                  <div className="flex items-center gap-2 text-slate-300 font-bold">
+                    <Shield size={14} />
+                    <span>你当前的身体</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 font-mono">
+                    <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                      <span className="text-slate-500 text-[11px] block">形态</span>
+                      <span className="text-sm font-bold text-emerald-300">
+                        {predator.formNameZh}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                      <span className="text-slate-500 text-[11px] block">生命</span>
+                      <span className="text-sm font-bold text-white">
+                        {predator.pilotHp} / {predator.pilotMaxHp}
+                      </span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                      <span className="text-slate-500 text-[11px] block">大招</span>
+                      <span className="text-sm font-bold text-white">{predator.ultNameZh}</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                      <span className="text-slate-500 text-[11px] block">已换怪</span>
+                      <span className="text-sm font-bold text-white">{predator.morphs} 次</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    血量与同族士兵完全一致：你也是一名士兵，靠走位和换怪活着。复活槽在右上角绑定。
+                  </p>
+                </div>
+              </div>
+            )
           )}
         </div>
 
