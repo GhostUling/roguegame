@@ -396,6 +396,8 @@ export interface PredatorSnapshot {
   pilotMaxHp: number;
   morphs: number;
   timeLeft: number;
+  /** Total damage dealt by the player to the prey. */
+  damageDealt: number;
   /** The three corner slots, in slot order; an empty slot is null. */
   respawnSlots: (EnemyType | null)[];
   /** What the prey has grown into, oldest first. */

@@ -145,6 +145,9 @@ export const HUD: React.FC<HUDProps> = ({
             <span className="text-slate-300">
               同族士兵 {predator.swarmCount}/{predator.swarmCap}
             </span>
+            <span className="text-rose-400 font-bold flex items-center gap-1">
+              造成伤害 {predator.damageDealt}
+            </span>
             <span className="text-slate-300">剩余 {formatTime(predator.timeLeft)}</span>
             <span className="text-slate-400">换怪 {predator.morphs}</span>
             <span className="text-slate-400">

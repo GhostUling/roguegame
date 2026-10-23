@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PRESSURE_RADIUS, PreyView, stepPreyAi } from '../engine/preyAi';
+import { PRESSURE_RADIUS, PreyView, preyHostilePriority, stepPreyAi } from '../engine/preyAi';
 
 const SPEED = 4.4;
 
@@ -105,4 +105,78 @@ describe('stepPreyAi — survival first', () => {
     expect(PRESSURE_RADIUS).toBeGreaterThan(150);
     expect(PRESSURE_RADIUS).toBeLessThan(460);
   });
+
+  it('escapes through the gap when surrounded by multiple hostiles on three sides', () => {
+    // Hostiles on the top, left, and bottom: only the right (east) is clear
+    const hostiles = [
+      { x: 960, y: 460 }, // above
+      { x: 880, y: 540 }, // left
+      { x: 960, y: 620 }, // below
+    ];
+    const order = stepPreyAi(
+      view({
+        pressure: 3,
+        threatX: 880,
+        threatY: 540,
+        nearbyHostiles: hostiles,
+      }),
+      SPEED,
+      1 / 60
+    );
+    // Must escape to the right through the clear corridor
+    expect(order.vx).toBeGreaterThan(0);
+  });
+
+  it('slides along a wall rather than stalling when pressed against an edge', () => {
+    // Backed against the left wall, threat directly in front and slightly above
+    const order = stepPreyAi(
+      view({
+        x: 40,
+        y: 500,
+        threatX: 120,
+        threatY: 480,
+        pressure: 2,
+      }),
+      SPEED,
+      1 / 60
+    );
+    // Must move down along the wall away from the threat above, not stall
+    expect(order.vy).toBeGreaterThan(0);
+    // Keeps strong momentum along the wall
+    expect(Math.abs(order.vy)).toBeGreaterThan(SPEED * 0.5);
+  });
+
+  it('prioritizes fast, low-HP speeders over slow, high-HP tanks', () => {
+    // Speeder (HP 16, Speed 3.8, dist 100) vs Tank (HP 120, Speed 1.15, dist 100)
+    const speederScore = preyHostilePriority(16, 3.8, 100);
+    const tankScore = preyHostilePriority(120, 1.15, 100);
+    expect(speederScore).toBeGreaterThan(tankScore * 3);
+
+    // Wounded tank (HP 5, Speed 1.15, dist 100) gains high priority
+    const woundedTankScore = preyHostilePriority(5, 1.15, 100);
+    expect(woundedTankScore).toBeGreaterThan(tankScore * 2);
+  });
+
+  it('gravitates towards open ground when holding the ring', () => {
+    // Threat is 300px above. Clockwise orbit would head right (x+), counter-clockwise would head left (x-).
+    // Hostiles block the right side at (1100, 540). Left side (960 - 150 = 810) is open.
+    const hostiles = [
+      { x: 1100, y: 540 },
+      { x: 1120, y: 520 },
+      { x: 1080, y: 560 },
+    ];
+    const order = stepPreyAi(
+      view({
+        threatX: 960,
+        threatY: 240, // 300px above, in engagement ring
+        nearbyHostiles: hostiles,
+      }),
+      SPEED,
+      1 / 60
+    );
+    // Should choose the open left side (vx < 0) rather than walking into the hostiles on the right
+    expect(order.vx).toBeLessThan(0);
+  });
 });
+
+

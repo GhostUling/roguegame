@@ -65,3 +65,21 @@ export function swarmAround(
   }
   return n;
 }
+
+/** Collects soldiers that are within `radius` of a point. */
+export function swarmNearby(
+  swarm: { x: number; y: number }[],
+  x: number,
+  y: number,
+  radius: number
+): { x: number; y: number }[] {
+  const reachSq = radius * radius;
+  const nearby: { x: number; y: number }[] = [];
+  for (const unit of swarm) {
+    const dx = unit.x - x;
+    const dy = unit.y - y;
+    if (dx * dx + dy * dy < reachSq) nearby.push({ x: unit.x, y: unit.y });
+  }
+  return nearby;
+}
+

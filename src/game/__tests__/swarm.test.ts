@@ -5,6 +5,7 @@ import {
   soldierWaveCount,
   swarmAround,
   swarmCentre,
+  swarmNearby,
 } from '../engine/swarm';
 
 describe('soldierWaveCount', () => {
@@ -42,4 +43,11 @@ describe('swarm geometry', () => {
     expect(swarmAround(swarm, 150, 200, 120)).toBe(2);
     expect(swarmAround(swarm, 900, 900, 50)).toBe(0);
   });
+
+  it('collects the soldiers inside a radius of a point', () => {
+    expect(swarmNearby(swarm, 100, 100, 1)).toEqual([{ x: 100, y: 100 }]);
+    expect(swarmNearby(swarm, 150, 200, 120)).toHaveLength(2);
+    expect(swarmNearby(swarm, 900, 900, 50)).toEqual([]);
+  });
 });
+

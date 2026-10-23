@@ -90,8 +90,8 @@ import {
   soldierCanBite,
 } from '../core/predatorForms';
 import { PREY_BUFF_INTERVAL, pickPreyUpgrade, preyBuffCountdown } from './preyBuff';
-import { SOLDIER_BITE_COOLDOWN, soldierBiteDamage, soldierWaveCount, swarmAround, swarmCentre } from './swarm';
-import { PRESSURE_RADIUS, stepPreyAi } from './preyAi';
+import { SOLDIER_BITE_COOLDOWN, soldierBiteDamage, soldierWaveCount, swarmAround, swarmCentre, swarmNearby } from './swarm';
+import { PRESSURE_RADIUS, preyHostilePriority, stepPreyAi } from './preyAi';
 
 export interface GameEngineCallbacks {
   onLevelUp: () => void;
@@ -1219,6 +1219,11 @@ export class GameEngine {
    * happens to be nearer. Nothing in here knows which one you are; that is the
    * whole rule, and it is why diving in is what gets you shot at.
    */
+  /**
+   * The closest hostile body around a point — a soldier or you, whichever
+   * happens to be nearer. Nothing in here knows which one you are; that is the
+   * whole rule, and it is why diving in is what gets you shot at.
+   */
   private nearestHostile(x: number, y: number): { x: number; y: number; distSq: number } | null {
     const nearest = this.nearestEnemy(x, y);
     let best = nearest.enemy
@@ -1234,6 +1239,48 @@ export class GameEngine {
     }
 
     return best;
+  }
+
+  /**
+   * For the prey in Predator mode: evaluates hostiles to prioritize targets that
+   * have low HP and high speed (e.g. speeders, wounded pursuers) so the prey
+   * can position itself to eliminate fast, fragile threats first while kiting.
+   */
+  private priorityHostile(x: number, y: number): { x: number; y: number; distSq: number } | null {
+    let bestScore = -Infinity;
+    let bestTarget: { x: number; y: number; distSq: number } | null = null;
+
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const distSq = dx * dx + dy * dy;
+      const dist = Math.sqrt(distSq);
+      if (dist > 750) continue;
+
+      const score = preyHostilePriority(e.hp, e.speed, dist);
+      if (score > bestScore) {
+        bestScore = score;
+        bestTarget = { x: e.x, y: e.y, distSq };
+      }
+    }
+
+    const pilot = this.pilot;
+    if (pilot) {
+      const dx = pilot.x - x;
+      const dy = pilot.y - y;
+      const distSq = dx * dx + dy * dy;
+      const dist = Math.sqrt(distSq);
+      if (dist <= 750) {
+        const score = preyHostilePriority(pilot.hp, pilot.speed, dist);
+        if (score > bestScore) {
+          bestScore = score;
+          bestTarget = { x: pilot.x, y: pilot.y, distSq };
+        }
+      }
+    }
+
+    return bestTarget ?? this.nearestHostile(x, y);
   }
 
   /**
@@ -1292,16 +1339,15 @@ export class GameEngine {
       index === 0 ? this.player.lastFireTime : this.player.pilot2LastFireTime || 0;
     if (now - lastFireTime < currentFireRate) return;
 
-    // Predator: the hull answers whatever is closest on it — a soldier or you,
-    // whichever happens to be nearer. It is not told which one you are, so
-    // lurking at range keeps you anonymous and diving in is what paints you.
+    // Predator: the hull answers priority targets (low HP, high speed pursuers)
+    // or whatever is closest. Diving in is what paints you.
     const nearest = this.nearestEnemy(origin.x, origin.y);
     let hasTarget = nearest.enemy !== null;
     let minDistSq = nearest.distSq;
     let targetX = nearest.enemy ? nearest.enemy.x : 0;
     let targetY = nearest.enemy ? nearest.enemy.y : 0;
     if (this.mode().heroPrey) {
-      const threat = this.nearestHostile(origin.x, origin.y);
+      const threat = this.priorityHostile(origin.x, origin.y);
       if (threat) {
         hasTarget = true;
         minDistSq = threat.distSq;
@@ -1891,15 +1937,33 @@ export class GameEngine {
   /** The prey is not on the stick: its policy drives the same hull. */
   private updatePreyMovement(dt: number) {
     const centre = swarmCentre(this.enemies);
-    const threat = this.nearestHostile(this.player.x, this.player.y);
+    const threat = this.priorityHostile(this.player.x, this.player.y);
     const pilot = this.pilot;
 
     // What is leaning on it, counted the same way for soldiers and for you.
-    let pressure = swarmAround(this.enemies, this.player.x, this.player.y, PRESSURE_RADIUS);
+    const nearby = swarmNearby(this.enemies, this.player.x, this.player.y, PRESSURE_RADIUS);
+    let pressure = nearby.length;
+    const hostiles: { x: number; y: number; hp?: number; speed?: number }[] = [];
+
+    const awarenessSq = 450 * 450;
+    for (let i = 0; i < this.enemies.length; i++) {
+      const e = this.enemies[i];
+      const dx = e.x - this.player.x;
+      const dy = e.y - this.player.y;
+      if (dx * dx + dy * dy <= awarenessSq) {
+        hostiles.push({ x: e.x, y: e.y, hp: e.hp, speed: e.speed });
+      }
+    }
+
     if (pilot) {
       const dx = pilot.x - this.player.x;
       const dy = pilot.y - this.player.y;
-      if (dx * dx + dy * dy <= PRESSURE_RADIUS * PRESSURE_RADIUS) pressure += 1;
+      if (dx * dx + dy * dy <= PRESSURE_RADIUS * PRESSURE_RADIUS) {
+        pressure += 1;
+      }
+      if (dx * dx + dy * dy <= awarenessSq) {
+        hostiles.push({ x: pilot.x, y: pilot.y, hp: pilot.hp, speed: pilot.speed });
+      }
     }
 
     const order = stepPreyAi(
@@ -1916,6 +1980,7 @@ export class GameEngine {
         height: this.height,
         strafeTimer: this.preyStrafeTimer,
         strafeSign: this.preyStrafeSign,
+        nearbyHostiles: hostiles,
       },
       this.player.speed,
       dt
@@ -1930,7 +1995,9 @@ export class GameEngine {
     const margin = this.player.radius + 6;
     this.player.x = Math.max(margin, Math.min(this.width - margin, this.player.x));
     this.player.y = Math.max(margin, Math.min(this.height - margin, this.player.y));
-    this.player.angle = Math.atan2(order.vy, order.vx);
+    if (Math.hypot(order.vx, order.vy) > 0.05) {
+      this.player.angle = Math.atan2(order.vy, order.vx);
+    }
 
     if (order.castSkill) this.executePreySkill();
     if (this.player.invincibleTimer > 0) this.player.invincibleTimer -= dt;
@@ -2144,15 +2211,15 @@ export class GameEngine {
     });
   }
 
-  /** Damage that lands on the prey. Its shields are card-side and absent here. */
+  /** Damage that lands on the prey from the player. Its shields are card-side and absent here. */
   private damagePrey(amount: number) {
     this.player.hp -= amount;
     this.preyDamage += amount;
     this.player.timeSinceLastDamage = 0;
     this.triggerScreenShake(Math.min(6, 2 + amount / 20));
-    if (this.floatingTexts.length < 20) {
-      this.addFloatingText(this.player.x, this.player.y - 18, `-${amount}`, '#fb7185', false);
-    }
+    // Always display player damage on the prey — never drop it due to soldier bite spam
+    this.addFloatingText(this.player.x, this.player.y - 20, `-${amount}`, '#f43f5e', true);
+    this.spawnImpactSparks(this.player.x, this.player.y, '#f43f5e', 5);
     if (this.player.hp <= 0) this.handlePlayerDeath();
   }
 
@@ -2309,6 +2376,7 @@ export class GameEngine {
       pilotMaxHp: Math.round(pilot.maxHp),
       morphs: this.morphs,
       timeLeft: mode.runDurationSec > 0 ? Math.max(0, Math.ceil(mode.runDurationSec - this.gameTime)) : 0,
+      damageDealt: Math.round(this.preyDamage),
       respawnSlots: this.respawnSlots.slice(),
       preyUpgrades: this.preyUpgradeViews,
       nextBuffIn: preyBuffCountdown(this.preyBuffTimer),
