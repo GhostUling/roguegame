@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { sound } from '../game/infra/audio';
 import { GameMode } from '../game/core/types';
 import { GAME_MODES } from '../game/core/modes';
-import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame, FlaskConical, Skull } from 'lucide-react';
+import { Play, Trophy, Crosshair, Sparkles, Volume2, VolumeX, Shield, Zap, Bookmark, Users, Flame, FlaskConical, Skull, Settings } from 'lucide-react';
 
 /** Tailwind classes per mode accent; the mode table only carries the token. */
 const ACCENT_CLASSES = {
@@ -31,6 +31,11 @@ const ACCENT_CLASSES = {
     label: 'text-rose-300',
     icon: Skull,
   },
+  violet: {
+    card: 'border-violet-400 shadow-[0_0_24px_rgba(167,139,250,0.3)]',
+    label: 'text-violet-300',
+    icon: Zap,
+  },
 } as const;
 
 interface StartScreenProps {
@@ -39,6 +44,7 @@ interface StartScreenProps {
   onToggleMute: () => void;
   onStart: (mode: GameMode) => void;
   onOpenCodex: () => void;
+  onOpenSettings: () => void;
 }
 
 export const StartScreen: React.FC<StartScreenProps> = ({
@@ -47,6 +53,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({
   onToggleMute,
   onStart,
   onOpenCodex,
+  onOpenSettings,
 }) => {
   const [mode, setMode] = useState<GameMode>('standard');
 
@@ -87,10 +94,23 @@ export const StartScreen: React.FC<StartScreenProps> = ({
           </span>
           <button
             onClick={onToggleMute}
-            className="p-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border border-slate-700/60 transition-colors"
+            className="p-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-cyan-400 border border-slate-700/60 transition-colors cursor-pointer"
             title={isMuted ? '取消静音' : '静音'}
           >
             {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+          </button>
+          <button
+            onClick={() => {
+              sound.init();
+              sound.resume();
+              sound.playClick(true);
+              onOpenSettings();
+            }}
+            className="px-2.5 py-1 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-cyan-300 border border-slate-700/60 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+            title="打开系统设置"
+          >
+            <Settings size={14} />
+            <span>设置</span>
           </button>
         </div>
 

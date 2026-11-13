@@ -34,6 +34,30 @@ import {
 import { FRIENDLY_COLOR, drawFriendlyMarker } from './friendlyMarker';
 import { LANCE_LENGTH, RIFT_SPACING, riftBranch } from '../systems/riftLance';
 import { ENEMY_TYPES } from '../core/enemyTypes';
+import { GasterRing, GASTER_BEAM_LENGTH, GASTER_BEAM_WIDTH, GASTER_WINDUP_SECONDS } from '../systems/gasterBlaster';
+import {
+  IaijutsuSlash,
+  IAIJUTSU_CUT_DURATION,
+  IAIJUTSU_SHEATH_PAUSE,
+  IAIJUTSU_SHATTER_DURATION,
+  calculateIaijutsuPhantomPos,
+  generateRiftShards,
+} from '../systems/voidIaijutsu';
+import { BabylonGate, BabylonSword, BABYLON_SWORD_LENGTH, BABYLON_SWORD_WIDTH, BABYLON_BURST_RADIUS } from '../systems/gateOfBabylon';
+import {
+  SingularityMeteor,
+  METEOR_EXPLOSION_RADIUS,
+  METEOR_CRATER_DURATION,
+  METEOR_AFTERSHOCK_DELAY,
+  generateCraterCracks,
+} from '../systems/singularityMeteor';
+import { DivineIonStrike, ION_GROUND_RADIUS } from '../systems/divineIonBeam';
+import {
+  MirageBlade,
+  MirageBloom,
+  MIRAGE_BLOOM_RADIUS,
+  MIRAGE_BLOOM_DURATION,
+} from '../systems/mirageBlades';
 
 /**
  * Everything the renderer reads. GameEngine satisfies this shape structurally, so
@@ -60,6 +84,14 @@ export interface RenderState {
   allies: Ally[];
   lances: Lance[];
   rifts: Rift[];
+  gasterRings: GasterRing[];
+  iaijutsuSlashes: IaijutsuSlash[];
+  babylonGates: BabylonGate[];
+  babylonSwords: BabylonSword[];
+  meteors: SingularityMeteor[];
+  ionStrikes: DivineIonStrike[];
+  mirageBlades: MirageBlade[];
+  mirageBlooms: MirageBloom[];
   width: number;
   height: number;
   pulseAnimTime: number;
@@ -135,6 +167,27 @@ export function renderScene(ctx: CanvasRenderingContext2D, frame: RenderState) {
 
   // 17. Overflow Hypercrit White-Out (last, so it sits over everything)
   renderScreenFlash(ctx, frame);
+
+  // 18. Draw Synergy Gaster Blasters
+  renderGasterBlasters(ctx, frame);
+
+  // 19. Draw Synergy Void Iaijutsu Slashes
+  renderVoidIaijutsu(ctx, frame);
+
+  // 20. Draw Synergy Gate of Babylon
+  renderGateOfBabylon(ctx, frame);
+
+  // 21. Draw Synergy Singularity Meteors
+  renderSingularityMeteors(ctx, frame);
+
+  // 22. Draw Synergy Divine Ion Strikes
+  renderDivineIonStrikes(ctx, frame);
+
+  // 23. Draw Synergy Prism Aegis Sanctuary
+  renderPrismAegis(ctx, frame);
+
+  // 24. Draw Synergy Mirage Blades
+  renderMirageBlades(ctx, frame);
 
   ctx.restore();
 }
@@ -1271,3 +1324,844 @@ export function renderFloatingTexts(ctx: CanvasRenderingContext2D, frame: Render
     ctx.restore();
   }
 }
+
+export function renderGasterBlasters(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (!frame.gasterRings || frame.gasterRings.length === 0) return;
+  for (const ring of frame.gasterRings) {
+    ctx.save();
+    // 1. Target reticle
+    const reticleAlpha = Math.max(0, 1 - ring.elapsed / ring.totalDuration);
+    ctx.save();
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = reticleAlpha * 0.45;
+    ctx.beginPath();
+    ctx.arc(ring.targetX, ring.targetY, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    // Rotating crosshair dashes
+    const rot = ring.elapsed * 2;
+    for (let i = 0; i < 4; i++) {
+      const a = rot + (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(ring.targetX + Math.cos(a) * 12, ring.targetY + Math.sin(a) * 12);
+      ctx.lineTo(ring.targetX + Math.cos(a) * 24, ring.targetY + Math.sin(a) * 24);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 2. Individual Blaster units
+    for (const b of ring.blasters) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.aimAngle);
+
+      // Skull plate (geometric faceted dragon skull)
+      ctx.fillStyle = '#090d16';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.moveTo(12, 0);
+      ctx.lineTo(-8, -14);
+      ctx.lineTo(-16, -10);
+      ctx.lineTo(-14, 0);
+      ctx.lineTo(-16, 10);
+      ctx.lineTo(-8, 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Mandible jaws (upper & lower)
+      ctx.strokeStyle = '#7dd3fc';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-4, -12);
+      ctx.lineTo(8, -10);
+      ctx.lineTo(14, -4);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-4, 12);
+      ctx.lineTo(8, 10);
+      ctx.lineTo(14, 4);
+      ctx.stroke();
+
+      // Glowing Eye (Center pupil)
+      const chargeGlow = Math.min(1, ring.elapsed / GASTER_WINDUP_SECONDS);
+      ctx.fillStyle = b.fired ? '#ffffff' : '#38bdf8';
+      ctx.shadowColor = '#0284c7';
+      ctx.shadowBlur = b.fired ? 12 : 6 * chargeGlow;
+      ctx.beginPath();
+      ctx.arc(-2, 0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.restore();
+
+      // 3. Firing high-intensity laser beam
+      if (b.fired && b.fireProgress > 0 && b.fireProgress < 1) {
+        const beamFade = Math.sin(b.fireProgress * Math.PI);
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.aimAngle);
+
+        const currentWidth = GASTER_BEAM_WIDTH * beamFade;
+
+        // Outer neon aura
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.lineWidth = currentWidth * 1.8;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(GASTER_BEAM_LENGTH, 0);
+        ctx.stroke();
+
+        // Inner piercing core
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        ctx.lineWidth = currentWidth * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(GASTER_BEAM_LENGTH, 0);
+        ctx.stroke();
+
+        // Energy shock rings along the beam
+        for (let r = 80; r < GASTER_BEAM_LENGTH; r += 110) {
+          ctx.strokeStyle = '#bae6fd';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(r, 0, 6, currentWidth * 0.6, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+}
+
+export function renderVoidIaijutsu(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (!frame.iaijutsuSlashes || frame.iaijutsuSlashes.length === 0) return;
+  const sheathEnd = IAIJUTSU_CUT_DURATION + IAIJUTSU_SHEATH_PAUSE;
+
+  for (const s of frame.iaijutsuSlashes) {
+    ctx.save();
+
+    const phantom =
+      s.phase === 'cut'
+        ? calculateIaijutsuPhantomPos(s)
+        : { x: s.endX, y: s.endY, progress: 1 };
+
+    // 1. Cut line (Razor dimension seam extends progressively as phantom dashes across)
+    const seamEndX = s.phase === 'cut' ? phantom.x : s.endX;
+    const seamEndY = s.phase === 'cut' ? phantom.y : s.endY;
+    const lineAlpha =
+      s.phase === 'shatter'
+        ? Math.max(0, 1 - (s.elapsed - sheathEnd) / IAIJUTSU_SHATTER_DURATION)
+        : 1;
+
+    ctx.save();
+    ctx.globalAlpha = lineAlpha;
+
+    // Dark rift shadow
+    ctx.strokeStyle = '#020617';
+    ctx.lineWidth = s.phase === 'cut' ? 10 : 8;
+    ctx.beginPath();
+    ctx.moveTo(s.startX, s.startY);
+    ctx.lineTo(seamEndX, seamEndY);
+    ctx.stroke();
+
+    // Vivid neon core
+    ctx.strokeStyle = s.phase === 'sheath' ? '#ffffff' : '#c084fc';
+    ctx.lineWidth = s.phase === 'sheath' ? 3.5 : 2.5;
+    ctx.shadowColor = '#a855f7';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(s.startX, s.startY);
+    ctx.lineTo(seamEndX, seamEndY);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 2. Purple-tinted phantom clone of the player's actual ship dashing & sheathing
+    const shatterFade =
+      s.phase === 'shatter' ? Math.max(0, 1 - (s.elapsed - sheathEnd) / 0.12) : 1;
+
+    if (s.phase === 'cut' || s.phase === 'sheath' || shatterFade > 0) {
+      const dx = s.endX - s.startX;
+      const dy = s.endY - s.startY;
+      const shipRadius = frame.player.radius || 14;
+
+      // Trailing phantom afterimages along the slash path
+      const trailOffsets = s.phase === 'cut' ? [0.28, 0.18, 0.09] : [0.14, 0.06];
+      for (let tIdx = 0; tIdx < trailOffsets.length; tIdx++) {
+        const trailT = Math.max(0, phantom.progress - trailOffsets[tIdx]);
+        if (trailT <= 0.01) continue;
+        const tx = s.startX + dx * trailT;
+        const ty = s.startY + dy * trailT;
+
+        ctx.save();
+        ctx.translate(tx, ty);
+        ctx.globalAlpha = (0.14 + tIdx * 0.08) * shatterFade;
+
+        // Soft purple phantom haze
+        ctx.fillStyle = 'rgba(168, 85, 247, 0.35)';
+        ctx.beginPath();
+        ctx.arc(0, 0, shipRadius * 1.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.shadowColor = '#9333ea';
+        ctx.shadowBlur = 14;
+        drawCharacterShip(ctx, frame.player.characterId, shipRadius, s.angle, frame.pulseAnimTime);
+        ctx.restore();
+      }
+
+      // Main phantom ship (same ship design as player, with purple spectral tint & aura)
+      ctx.save();
+      ctx.translate(phantom.x, phantom.y);
+      ctx.globalAlpha = 0.82 * shatterFade;
+
+      // Spectral purple aura disc & contour glow behind the ship hull
+      const auraGrad = ctx.createRadialGradient(0, 0, shipRadius * 0.2, 0, 0, shipRadius * 1.9);
+      auraGrad.addColorStop(0, 'rgba(192, 132, 252, 0.45)');
+      auraGrad.addColorStop(0.6, 'rgba(147, 51, 234, 0.22)');
+      auraGrad.addColorStop(1, 'rgba(147, 51, 234, 0)');
+      ctx.fillStyle = auraGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, shipRadius * 1.9, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.shadowColor = '#a855f7';
+      ctx.shadowBlur = 20;
+      drawCharacterShip(ctx, frame.player.characterId, shipRadius, s.angle, frame.pulseAnimTime);
+
+      // Subtle purple spectral overlay wash so every hull color reads unmistakably as a violet phantom
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.48)';
+      ctx.fillRect(-shipRadius * 2.5, -shipRadius * 2.5, shipRadius * 5, shipRadius * 5);
+      ctx.globalCompositeOperation = 'source-over';
+
+      // Slash shock crescent ahead of the dashing phantom nose during cut
+      if (s.phase === 'cut') {
+        ctx.rotate(s.angle);
+        ctx.strokeStyle = '#f5d0fe';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = '#e879f9';
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(4, 0, shipRadius + 10, -Math.PI * 0.42, Math.PI * 0.42);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Star sparkle at the phantom's sheathing stop point
+      if (s.phase === 'sheath') {
+        ctx.save();
+        ctx.translate(s.endX, s.endY);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#e879f9';
+        ctx.shadowBlur = 16;
+        ctx.beginPath();
+        ctx.moveTo(0, -16);
+        ctx.lineTo(2.5, -2.5);
+        ctx.lineTo(16, 0);
+        ctx.lineTo(2.5, 2.5);
+        ctx.lineTo(0, 16);
+        ctx.lineTo(-2.5, 2.5);
+        ctx.lineTo(-16, 0);
+        ctx.lineTo(-2.5, -2.5);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // 3. Dimensional Shatter glass fractures
+    if (s.phase === 'shatter') {
+      const shatterProgress = Math.min(1, Math.max(0, (s.elapsed - sheathEnd) / IAIJUTSU_SHATTER_DURATION));
+      const shatterAlpha = 1 - shatterProgress;
+      const shards = generateRiftShards(s.id, 12);
+      const dx = s.endX - s.startX;
+      const dy = s.endY - s.startY;
+
+      ctx.save();
+      ctx.globalAlpha = shatterAlpha;
+      ctx.strokeStyle = '#e9d5ff';
+      ctx.fillStyle = 'rgba(192, 132, 252, 0.25)';
+      ctx.lineWidth = 1.5;
+
+      for (const shard of shards) {
+        const cx =
+          s.startX +
+          dx * shard.t +
+          Math.cos(s.angle + Math.PI / 2) * shard.offset * (1 + shatterProgress * 1.5);
+        const cy =
+          s.startY +
+          dy * shard.t +
+          Math.sin(s.angle + Math.PI / 2) * shard.offset * (1 + shatterProgress * 1.5);
+        const len = shard.length * (1 - shatterProgress * 0.3);
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(shard.angle) * len, cy + Math.sin(shard.angle) * len);
+        ctx.lineTo(
+          cx + Math.cos(shard.angle + 1) * (len * 0.6),
+          cy + Math.sin(shard.angle + 1) * (len * 0.6)
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+}
+
+export function renderGateOfBabylon(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  // 1. Draw Golden Gates
+  if (frame.babylonGates && frame.babylonGates.length > 0) {
+    for (const g of frame.babylonGates) {
+      if (!g.active) continue;
+      ctx.save();
+      ctx.translate(g.originX, g.originY);
+      ctx.rotate(g.angle);
+
+      const alpha = Math.min(1, (g.duration - g.elapsed) * 2);
+      ctx.globalAlpha = Math.max(0, alpha);
+
+      // Golden gate hex portal
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#f59e0b';
+      ctx.shadowBlur = 15;
+
+      // Draw horizontal portal lattice
+      ctx.beginPath();
+      ctx.moveTo(-20, -110);
+      ctx.lineTo(10, -80);
+      ctx.lineTo(20, 0);
+      ctx.lineTo(10, 80);
+      ctx.lineTo(-20, 110);
+      ctx.stroke();
+
+      // Rippling golden portal circles
+      const wave = Math.sin(frame.pulseAnimTime * 8) * 4;
+      for (let y = -80; y <= 80; y += 40) {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.35)';
+        ctx.beginPath();
+        ctx.arc(0, y, 12 + wave, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // 2. Draw Fired Golden Swords
+  if (frame.babylonSwords && frame.babylonSwords.length > 0) {
+    for (const s of frame.babylonSwords) {
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.angle);
+
+      // Golden sword geometry (blade, hilt, glowing point)
+      ctx.fillStyle = '#fef08a';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#d97706';
+      ctx.shadowBlur = s.stuck ? 8 : 12;
+
+      ctx.beginPath();
+      ctx.moveTo(BABYLON_SWORD_LENGTH / 2, 0); // Point
+      ctx.lineTo(-BABYLON_SWORD_LENGTH / 4, -BABYLON_SWORD_WIDTH / 2);
+      ctx.lineTo(-BABYLON_SWORD_LENGTH / 2, -BABYLON_SWORD_WIDTH / 4);
+      ctx.lineTo(-BABYLON_SWORD_LENGTH / 2, BABYLON_SWORD_WIDTH / 4);
+      ctx.lineTo(-BABYLON_SWORD_LENGTH / 4, BABYLON_SWORD_WIDTH / 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Crossguard
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(-BABYLON_SWORD_LENGTH / 3, -BABYLON_SWORD_WIDTH, 4, BABYLON_SWORD_WIDTH * 2);
+
+      // Secondary burst sparks if detonating
+      if (s.stuck) {
+        const detAlpha = Math.max(0, 1 - s.stuckTimer / 0.3);
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = detAlpha;
+        ctx.beginPath();
+        ctx.arc(0, 0, BABYLON_BURST_RADIUS * (1 - detAlpha), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+}
+
+export function renderSingularityMeteors(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (!frame.meteors || frame.meteors.length === 0) return;
+  for (const m of frame.meteors) {
+    ctx.save();
+
+    // 1. Pre-impact targeting reticle & falling super-gravity meteor core
+    if (!m.impacted) {
+      ctx.save();
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.5 + Math.sin(frame.pulseAnimTime * 10) * 0.25;
+      ctx.beginPath();
+      ctx.arc(m.targetX, m.targetY, m.pullRadius * (1 - m.altitude * 0.5), 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Pull lines spiraling inward
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.35)';
+      ctx.lineWidth = 1.2;
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3 + frame.pulseAnimTime * 3;
+        const r = m.pullRadius * (0.3 + 0.7 * (1 - m.altitude));
+        ctx.beginPath();
+        ctx.moveTo(m.targetX + Math.cos(a) * r, m.targetY + Math.sin(a) * r);
+        ctx.lineTo(m.targetX, m.targetY);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(m.currentX, m.currentY);
+      const rot = frame.pulseAnimTime * 6;
+
+      // Inverted negative space core
+      ctx.fillStyle = '#020617';
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#9333ea';
+      ctx.shadowBlur = 24;
+
+      const size = 32 + (1 - m.altitude) * 16;
+      ctx.beginPath();
+      ctx.arc(0, 0, size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Concentric event horizon rings rotating
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#ffffff';
+      for (let ring = 1; ring <= 3; ring++) {
+        ctx.beginPath();
+        ctx.ellipse(0, 0, size * (1 + ring * 0.35), size * (0.6 + ring * 0.2), rot * ring, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 2. Post-impact scorched crater, tectonic fissures & delayed singularity collapse
+    if (m.impacted && m.impactTimer > 0) {
+      const craterElapsed = Math.max(0, METEOR_CRATER_DURATION - m.impactTimer);
+      const fade = Math.min(1, m.impactTimer / 0.55);
+
+      ctx.save();
+      ctx.translate(m.targetX, m.targetY);
+
+      // (a) Scorched obsidian-magma-violet ground crater disc
+      ctx.save();
+      ctx.globalAlpha = fade * 0.9;
+      const craterGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, METEOR_EXPLOSION_RADIUS);
+      craterGrad.addColorStop(0, 'rgba(15, 6, 36, 0.92)');
+      craterGrad.addColorStop(0.32, 'rgba(147, 51, 234, 0.42)');
+      craterGrad.addColorStop(0.62, 'rgba(249, 115, 22, 0.28)');
+      craterGrad.addColorStop(0.88, 'rgba(124, 45, 18, 0.14)');
+      craterGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = craterGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Crater outer rim ring
+      ctx.strokeStyle = 'rgba(251, 146, 60, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS * 0.94, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      // (b) Deterministic jagged tectonic fissures radiating from impact center
+      const cracks = generateCraterCracks(m.id, 12);
+      const fissureExpand = Math.min(1, craterElapsed / 0.14);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      for (let cIdx = 0; cIdx < cracks.length; cIdx++) {
+        const crack = cracks[cIdx];
+        const totalLen = METEOR_EXPLOSION_RADIUS * crack.lengthScale * fissureExpand;
+        const midLen = totalLen * 0.52;
+        const midX = Math.cos(crack.angle) * midLen;
+        const midY = Math.sin(crack.angle) * midLen;
+        const tipX = midX + Math.cos(crack.angle + crack.bendAngle) * (totalLen - midLen);
+        const tipY = midY + Math.sin(crack.angle + crack.bendAngle) * (totalLen - midLen);
+
+        // Molten glow channel
+        ctx.strokeStyle = cIdx % 2 === 0 ? '#f97316' : '#a855f7';
+        ctx.lineWidth = crack.width * 1.9;
+        ctx.shadowColor = cIdx % 2 === 0 ? '#ea580c' : '#9333ea';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(midX, midY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+
+        // White-hot inner fissure vein
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = cIdx % 2 === 0 ? '#fef08a' : '#e9d5ff';
+        ctx.lineWidth = Math.max(0.8, crack.width * 0.55);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(midX, midY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // (c) Counter-rotating gravity containment rings inside the crater
+      ctx.save();
+      ctx.globalAlpha = fade * 0.72;
+      const rot = frame.pulseAnimTime * 2.4;
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([18, 12]);
+      ctx.beginPath();
+      ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS * 0.56, rot, rot + Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#fb923c';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([10, 14]);
+      ctx.beginPath();
+      ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS * 0.8, -rot * 1.4, -rot * 1.4 + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // (d) Primary impact shockwave (first 0.45s)
+      if (craterElapsed < 0.45) {
+        const prog = craterElapsed / 0.45;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, 1 - prog);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4 * (1 - prog);
+        ctx.beginPath();
+        ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS * prog, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // (e) Delayed secondary collapse telegraph & detonation
+      if (craterElapsed < METEOR_AFTERSHOCK_DELAY) {
+        const tProg = craterElapsed / METEOR_AFTERSHOCK_DELAY;
+        ctx.save();
+        ctx.globalAlpha = 0.35 + tProg * 0.55;
+        ctx.strokeStyle = '#e879f9';
+        ctx.lineWidth = 1.5 + tProg * 2.5;
+        ctx.shadowColor = '#c084fc';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(12, METEOR_EXPLOSION_RADIUS * (1 - tProg * 0.92)), 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Pulsing unstable singularity core
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 8 + tProg * 14, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        const afterElapsed = craterElapsed - METEOR_AFTERSHOCK_DELAY;
+        if (afterElapsed < 0.5) {
+          const afterProg = afterElapsed / 0.5;
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, 1 - afterProg);
+          ctx.strokeStyle = '#e879f9';
+          ctx.lineWidth = 6 * (1 - afterProg);
+          ctx.shadowColor = '#a855f7';
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS * 1.12 * afterProg, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 3 * (1 - afterProg);
+          ctx.beginPath();
+          ctx.arc(0, 0, METEOR_EXPLOSION_RADIUS * 0.82 * afterProg, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+}
+
+export function renderDivineIonStrikes(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (!frame.ionStrikes || frame.ionStrikes.length === 0) return;
+  for (const s of frame.ionStrikes) {
+    ctx.save();
+
+    // 1. Targeting Phase: Laser convergence lines
+    if (s.phase === 'targeting') {
+      ctx.save();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#dc2626';
+      ctx.shadowBlur = 8;
+      const targetAnim = (frame.pulseAnimTime * 20) % 20;
+
+      // 3 laser guide lines from top
+      ctx.beginPath();
+      ctx.moveTo(s.targetX - 40, 0);
+      ctx.lineTo(s.targetX, s.targetY);
+      ctx.moveTo(s.targetX + 40, 0);
+      ctx.lineTo(s.targetX, s.targetY);
+      ctx.moveTo(s.targetX, 0);
+      ctx.lineTo(s.targetX, s.targetY);
+      ctx.stroke();
+
+      // Ground crosshair
+      ctx.beginPath();
+      ctx.arc(s.targetX, s.targetY, 15 + targetAnim * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 2. Massive Vertical Ion Pillar
+    if (s.phase === 'pillar') {
+      ctx.save();
+      const halfW = s.beamWidth / 2;
+
+      // Outer cyan plasma glow
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.4)';
+      ctx.fillRect(s.targetX - halfW * 1.5, 0, s.beamWidth * 1.5, frame.height);
+
+      // Core blinding white ion shaft
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.fillRect(s.targetX - halfW * 0.6, 0, s.beamWidth * 0.6, frame.height);
+
+      // Electric arc discharges along pillar
+      ctx.strokeStyle = '#a5f3fc';
+      ctx.lineWidth = 2.5;
+      for (let y = 0; y < frame.height; y += 60) {
+        ctx.beginPath();
+        ctx.moveTo(s.targetX - halfW, y);
+        ctx.lineTo(s.targetX + (Math.random() - 0.5) * 30, y + 30);
+        ctx.lineTo(s.targetX + halfW, y + 60);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 3. Ground Plasma Web
+    if (s.phase === 'ground') {
+      const alpha = Math.max(0, Math.min(1, s.groundTimer / 1.5));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(s.targetX, s.targetY);
+
+      // Ground shock patch
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.2)';
+      ctx.beginPath();
+      ctx.arc(0, 0, ION_GROUND_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Crackling arcs
+      ctx.strokeStyle = '#67e8f9';
+      ctx.lineWidth = 2;
+      for (let a = 0; a < 6; a++) {
+        const ang = (a * Math.PI) / 3;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(ang) * ION_GROUND_RADIUS * 0.6, Math.sin(ang) * ION_GROUND_RADIUS * 0.6);
+        ctx.lineTo(Math.cos(ang + 0.3) * ION_GROUND_RADIUS, Math.sin(ang + 0.3) * ION_GROUND_RADIUS);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+}
+
+export function renderPrismAegis(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  if (!frame.player.aegisLevel || frame.player.aegisLevel <= 0) return;
+  const p = frame.player;
+  const radius = p.aegisRadius || 140;
+  const rot = frame.pulseAnimTime * 0.6;
+  const pulseFrac = (frame.pulseAnimTime * 1.8) % 1;
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  // Subtle expanding perimeter pulse aura indicating active close-range burn field
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 0.35 * (1 - pulseFrac));
+  ctx.strokeStyle = '#67e8f9';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * (0.65 + pulseFrac * 0.35), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Octagonal perimeter
+  ctx.strokeStyle = '#38bdf8';
+  ctx.fillStyle = 'rgba(56, 189, 248, 0.08)';
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#0284c7';
+  ctx.shadowBlur = 12;
+
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = rot + (i * Math.PI) / 4;
+    const px = Math.cos(a) * radius;
+    const py = Math.sin(a) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Floating absorption charge dots
+  const chargeCount = p.aegisReflectedCount || 0;
+  for (let c = 0; c < chargeCount; c++) {
+    const a = -rot * 2 + (c * Math.PI * 2) / 8;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#38bdf8';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * (radius - 12), Math.sin(a) * (radius - 12), 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+export function renderMirageBlades(ctx: CanvasRenderingContext2D, frame: RenderState) {
+  // 1. Active blades (orbiting, queued, outbound, waiting offscreen, or returning convergence sweep)
+  if (frame.mirageBlades && frame.mirageBlades.length > 0) {
+    for (const b of frame.mirageBlades) {
+      if (b.state === 'dead') continue;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.angle);
+
+      const isReturning = b.state === 'returning';
+      const isOutbound = b.state === 'outbound';
+
+      // High-speed supersonic streak trail
+      if (isOutbound || isReturning) {
+        const trailLen = isReturning ? 56 : 38;
+        const grad = ctx.createLinearGradient(0, 0, -trailLen, 0);
+        grad.addColorStop(0, isReturning ? 'rgba(244, 114, 182, 0.85)' : 'rgba(56, 189, 248, 0.85)');
+        grad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = isReturning ? 3.5 : 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-6, 0);
+        ctx.lineTo(-trailLen, 0);
+        ctx.stroke();
+      }
+
+      // Ice-blue diamond blade (pink-tipped during the return convergence sweep)
+      ctx.fillStyle = isReturning ? '#fce7f3' : '#e0f2fe';
+      ctx.strokeStyle = isReturning ? '#f472b6' : '#38bdf8';
+      ctx.lineWidth = 1.5;
+
+      ctx.beginPath();
+      ctx.moveTo(14, 0); // Blade tip
+      ctx.lineTo(-4, -5);
+      ctx.lineTo(-12, 0);
+      ctx.lineTo(-4, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
+  // 2. Decoupled Geometric Lotus Blooms at world-space hit points (莲华绽放)
+  // Lightweight multi-layer vector passes (no shadowBlur) so 200+ enemy waves never drop frames
+  if (frame.mirageBlooms && frame.mirageBlooms.length > 0) {
+    for (const bloom of frame.mirageBlooms) {
+      const duration = bloom.duration || MIRAGE_BLOOM_DURATION;
+      const bloomProgress = Math.max(0, Math.min(1, bloom.elapsed / duration));
+      const alpha = Math.max(0, 1 - bloomProgress * 0.85);
+
+      ctx.save();
+      ctx.translate(bloom.x, bloom.y);
+      ctx.globalAlpha = alpha;
+
+      // Soft outer halo disc (replaces expensive shadowBlur)
+      ctx.fillStyle = 'rgba(244, 114, 182, 0.16)';
+      ctx.beginPath();
+      ctx.arc(0, 0, MIRAGE_BLOOM_RADIUS * (0.45 + bloomProgress * 0.55), 0, Math.PI * 2);
+      ctx.fill();
+
+      // Unfolding 8 diamond petals
+      const petalDist = MIRAGE_BLOOM_RADIUS * (0.3 + bloomProgress * 0.7);
+      const petalScale = 1 - bloomProgress * 0.3;
+      for (let p = 0; p < 8; p++) {
+        const petalAngle = (p * Math.PI) / 4 + bloomProgress * 0.6;
+        const px = Math.cos(petalAngle) * petalDist;
+        const py = Math.sin(petalAngle) * petalDist;
+
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(petalAngle + Math.PI / 2);
+
+        // Radiant crystal-pink & cyan lotus petal with crisp white edge
+        ctx.fillStyle = p % 2 === 0 ? 'rgba(56, 189, 248, 0.82)' : 'rgba(244, 114, 182, 0.82)';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.4;
+
+        ctx.beginPath();
+        ctx.moveTo(0, -12 * petalScale);
+        ctx.lineTo(6 * petalScale, 0);
+        ctx.lineTo(0, 8 * petalScale);
+        ctx.lineTo(-6 * petalScale, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // Luminous Lotus Core / Stamen (layered discs instead of shadowBlur)
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12 * (1 - bloomProgress * 0.45), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(0, 0, 6.5 * (1 - bloomProgress * 0.5), 0, Math.PI * 2);
+      ctx.fill();
+
+      // Expanding geometric ripple ring
+      ctx.strokeStyle = 'rgba(147, 197, 253, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, MIRAGE_BLOOM_RADIUS * bloomProgress, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+}
+

@@ -1,4 +1,12 @@
 import { Player, UpgradeOption, UpgradeCategory, UpgradeRarity } from '../core/types';
+import { LVL_GASTER_COUNT, LVL_GASTER_INTERVAL, LVL_GASTER_DAMAGE_SCALE } from '../systems/gasterBlaster';
+import { LVL_IAIJUTSU_DISTANCE, LVL_IAIJUTSU_INTERVAL, LVL_IAIJUTSU_DAMAGE_SCALE } from '../systems/voidIaijutsu';
+import { LVL_BABYLON_COUNT, LVL_BABYLON_INTERVAL, LVL_BABYLON_DAMAGE_SCALE } from '../systems/gateOfBabylon';
+import { LVL_METEOR_DAMAGE_SCALE, LVL_METEOR_INTERVAL, LVL_METEOR_PULL_RADIUS } from '../systems/singularityMeteor';
+import { LVL_ION_DAMAGE_SCALE, LVL_ION_INTERVAL, LVL_ION_WIDTH } from '../systems/divineIonBeam';
+import { LVL_AEGIS_RADIUS, LVL_AEGIS_BURST_DAMAGE_SCALE, LVL_AEGIS_BURST_THRESHOLD } from '../systems/prismAegis';
+import { LVL_MIRAGE_COUNT, LVL_MIRAGE_INTERVAL, LVL_MIRAGE_DAMAGE_SCALE } from '../systems/mirageBlades';
+import { getSynergyHintsForCard, ownsSuperWeapon } from '../systems/resonanceSynergies';
 
 export interface UpgradeDefinition {
   id: string;
@@ -497,6 +505,139 @@ export const ALL_UPGRADES: UpgradeDefinition[] = [
       p.gemPullSpeedScale = atLevel(LVL_SIPHON_PULL, lvl);
     },
   },
+  {
+    id: 'gaster_blasters',
+    key: 'gaster_blasters',
+    name: 'Gaster Protocol',
+    nameZh: '龙骨共鸣 · 湮灭光环',
+    desc: '超阶共鸣：召唤几何龙骨浮游炮台将目标包围成圈，按顺时针节拍依次回旋轰出穿透全屏的高能光柱！',
+    category: 'summon',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.gasterLevel
+        ? `环绕炮台 ${atLevel(LVL_GASTER_COUNT, lvl)} 门 · 冷却 ${atLevel(LVL_GASTER_INTERVAL, lvl)}s · 伤害 ×${atLevel(LVL_GASTER_DAMAGE_SCALE, lvl)}`
+        : `激活龙骨炮环阵 (${LVL_GASTER_COUNT[0]} 门 / 冷却 ${LVL_GASTER_INTERVAL[0]}s)`,
+    apply: (p, lvl) => {
+      p.gasterLevel = lvl;
+      p.gasterInterval = atLevel(LVL_GASTER_INTERVAL, lvl);
+      p.gasterDamageScale = atLevel(LVL_GASTER_DAMAGE_SCALE, lvl);
+    },
+  },
+  {
+    id: 'void_iaijutsu',
+    key: 'void_iaijutsu',
+    name: 'Void Iaijutsu',
+    nameZh: '次元居合 · 空间断绝',
+    desc: '超阶共鸣：极意居合瞬斩！机体化作黑白闪光穿透怪群，收刀入鞘定格 0.14 秒后，整条轨迹爆发空间撕裂坍塌！',
+    category: 'tactical',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.voidIaijutsuLevel
+        ? `斩切距离 ${atLevel(LVL_IAIJUTSU_DISTANCE, lvl)}px · 冷却 ${atLevel(LVL_IAIJUTSU_INTERVAL, lvl)}s · 伤害 ×${atLevel(LVL_IAIJUTSU_DAMAGE_SCALE, lvl)}`
+        : `激活次元居合 (斩击 ${LVL_IAIJUTSU_DISTANCE[0]}px / 冷却 ${LVL_IAIJUTSU_INTERVAL[0]}s)`,
+    apply: (p, lvl) => {
+      p.voidIaijutsuLevel = lvl;
+      p.voidIaijutsuInterval = atLevel(LVL_IAIJUTSU_INTERVAL, lvl);
+      p.voidIaijutsuDamageScale = atLevel(LVL_IAIJUTSU_DAMAGE_SCALE, lvl);
+    },
+  },
+  {
+    id: 'gate_of_babylon',
+    key: 'gate_of_babylon',
+    name: 'Gate of Babylon',
+    nameZh: '王之财宝 · 万象剑阵',
+    desc: '超阶共鸣：机体后方开启金色蜂窝空间裂门，漫天倾泻高能几何光剑飞刃，落地引发连锁引爆！',
+    category: 'ballistic',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.babylonLevel
+        ? `飞剑数量 ${atLevel(LVL_BABYLON_COUNT, lvl)} 门 · 冷却 ${atLevel(LVL_BABYLON_INTERVAL, lvl)}s · 伤害 ×${atLevel(LVL_BABYLON_DAMAGE_SCALE, lvl)}`
+        : `激活万象剑阵 (${LVL_BABYLON_COUNT[0]} 剑 / 冷却 ${LVL_BABYLON_INTERVAL[0]}s)`,
+    apply: (p, lvl) => {
+      p.babylonLevel = lvl;
+      p.babylonInterval = atLevel(LVL_BABYLON_INTERVAL, lvl);
+      p.babylonDamageScale = atLevel(LVL_BABYLON_DAMAGE_SCALE, lvl);
+    },
+  },
+  {
+    id: 'singularity_meteor',
+    key: 'singularity_meteor',
+    name: 'Singularity Meteor',
+    nameZh: '天动万象 · 坍缩陨星',
+    desc: '超阶共鸣：从高空召唤反相超重力黑洞陨星，暴力吸附全屏敌群后发生灭世级粉碎撞击！',
+    category: 'energy',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.meteorLevel
+        ? `吸附半径 ${atLevel(LVL_METEOR_PULL_RADIUS, lvl)}px · 冷却 ${atLevel(LVL_METEOR_INTERVAL, lvl)}s · 伤害 ×${atLevel(LVL_METEOR_DAMAGE_SCALE, lvl)}`
+        : `激活天动陨星 (吸附 ${LVL_METEOR_PULL_RADIUS[0]}px / 冷却 ${LVL_METEOR_INTERVAL[0]}s)`,
+    apply: (p, lvl) => {
+      p.meteorLevel = lvl;
+      p.meteorInterval = atLevel(LVL_METEOR_INTERVAL, lvl);
+      p.meteorDamageScale = atLevel(LVL_METEOR_DAMAGE_SCALE, lvl);
+    },
+  },
+  {
+    id: 'divine_ion_beam',
+    key: 'divine_ion_beam',
+    name: 'Divine Ion Beam',
+    nameZh: '神圣天谴 · 离子天罚',
+    desc: '超阶共鸣：多重激光引线锁定精英首领，天幕垂直轰下贯穿全屏的粗壮离子雷霆巨柱，遗留持续电网！',
+    category: 'energy',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.ionLevel
+        ? `离子光柱宽度 ${atLevel(LVL_ION_WIDTH, lvl)}px · 冷却 ${atLevel(LVL_ION_INTERVAL, lvl)}s · 伤害 ×${atLevel(LVL_ION_DAMAGE_SCALE, lvl)}`
+        : `激活离子天罚 (宽度 ${LVL_ION_WIDTH[0]}px / 冷却 ${LVL_ION_INTERVAL[0]}s)`,
+    apply: (p, lvl) => {
+      p.ionLevel = lvl;
+      p.ionInterval = atLevel(LVL_ION_INTERVAL, lvl);
+      p.ionDamageScale = atLevel(LVL_ION_DAMAGE_SCALE, lvl);
+    },
+  },
+  {
+    id: 'prism_aegis',
+    key: 'prism_aegis',
+    name: 'Prism Aegis',
+    nameZh: '绝对领域 · 棱镜偏折圣域',
+    desc: '超阶共鸣：机身周围展开八角全息圣域，将敌方弹幕以 2 倍速原路折射反杀，吸收充能释放排斥震波！',
+    category: 'defense',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.aegisLevel
+        ? `圣域半径 ${atLevel(LVL_AEGIS_RADIUS, lvl)}px · 震荡充能 ${atLevel(LVL_AEGIS_BURST_THRESHOLD, lvl)} 发 · 震波伤害 ×${atLevel(LVL_AEGIS_BURST_DAMAGE_SCALE, lvl)}`
+        : `展开绝对圣域 (半径 ${LVL_AEGIS_RADIUS[0]}px / 弹幕 2 倍折射反杀)`,
+    apply: (p, lvl) => {
+      p.aegisLevel = lvl;
+      p.aegisRadius = atLevel(LVL_AEGIS_RADIUS, lvl);
+      p.aegisDamageScale = atLevel(LVL_AEGIS_BURST_DAMAGE_SCALE, lvl);
+    },
+  },
+  {
+    id: 'mirage_blades',
+    key: 'mirage_blades',
+    name: 'Mirage Blades',
+    nameZh: '月华轮舞 · 幻影剑雨',
+    desc: '超阶共鸣：冰蓝极速绞肉剑圈护体，并可全弹超音速飞梭倾泻齐射，在目标体内绽放几何莲花！',
+    category: 'summon',
+    rarity: 'legendary',
+    maxLevel: 3,
+    statDiffText: (p, lvl = 1) =>
+      p.mirageLevel
+        ? `幻影剑 ${atLevel(LVL_MIRAGE_COUNT, lvl)} 刃 · 冷却 ${atLevel(LVL_MIRAGE_INTERVAL, lvl)}s · 伤害 ×${atLevel(LVL_MIRAGE_DAMAGE_SCALE, lvl)}`
+        : `激活幻影剑阵 (${LVL_MIRAGE_COUNT[0]} 刃护体 / 超音速齐射)`,
+    apply: (p, lvl) => {
+      p.mirageLevel = lvl;
+      p.mirageInterval = atLevel(LVL_MIRAGE_INTERVAL, lvl);
+      p.mirageDamageScale = atLevel(LVL_MIRAGE_DAMAGE_SCALE, lvl);
+    },
+  },
 ];
 
 /**
@@ -555,14 +696,33 @@ export function getRandomUpgrades(
   // Core fundamental upgrades that every build benefits from
   const FUNDAMENTALS = new Set(['damage', 'fire_rate', 'multi_shot', 'shield', 'speed']);
 
+  const isResonance = player.gameMode === 'resonance';
+  const RESONANCE_SUPER_KEYS = new Set([
+    'gaster_blasters',
+    'void_iaijutsu',
+    'gate_of_babylon',
+    'singularity_meteor',
+    'divine_ion_beam',
+    'prism_aegis',
+    'mirage_blades',
+  ]);
+
   const weightedCandidates = availableDefs.map((def) => {
     let weight = 1.0;
 
-    // Base rarity weight
-    if (def.rarity === 'common') weight = 3.2;
-    else if (def.rarity === 'rare') weight = 2.2;
-    else if (def.rarity === 'epic') weight = 1.5;
-    else if (def.rarity === 'legendary') weight = 0.8;
+    if (isResonance) {
+      weight = RESONANCE_SUPER_KEYS.has(def.key) ? 2.8 : 2.0;
+
+      if (getSynergyHintsForCard(player, def.key).some((h) => h.willComplete)) {
+        weight *= 1.5;
+      }
+    } else {
+      // Base rarity weight
+      if (def.rarity === 'common') weight = 3.2;
+      else if (def.rarity === 'rare') weight = 2.2;
+      else if (def.rarity === 'epic') weight = 1.5;
+      else if (def.rarity === 'legendary') weight = 0.8;
+    }
 
     // Fundamentals always maintain healthy presence in the pool
     if (FUNDAMENTALS.has(def.key)) {
@@ -600,9 +760,51 @@ export function getRandomUpgrades(
   const candidates = [...weightedCandidates];
   const targetCount = Math.min(count, candidates.length);
 
+  // Early-game Resonance guarantee: ensure at least 1 super-weapon card is offered
+  // until the pilot owns at least 2 distinct super-weapons.
+  if (isResonance) {
+    let ownedSuperCount = 0;
+    for (const k of RESONANCE_SUPER_KEYS) {
+      if (ownsSuperWeapon(player, k)) ownedSuperCount++;
+    }
+    if (ownedSuperCount < 2) {
+      const superIndices: number[] = [];
+      for (let i = 0; i < candidates.length; i++) {
+        if (RESONANCE_SUPER_KEYS.has(candidates[i].def.key)) superIndices.push(i);
+      }
+      if (superIndices.length > 0) {
+        const superWeightSum = superIndices.reduce((s, idx) => s + candidates[idx].weight, 0);
+        let r = Math.random() * superWeightSum;
+        let pickIdx = superIndices[0];
+        for (const idx of superIndices) {
+          r -= candidates[idx].weight;
+          if (r <= 0) {
+            pickIdx = idx;
+            break;
+          }
+        }
+        const chosen = candidates.splice(pickIdx, 1)[0].def;
+        const currentLvl = upgradeLevels[chosen.key] || 0;
+        selected.push({
+          id: `${chosen.id}_${currentLvl + 1}`,
+          key: chosen.key,
+          name: chosen.name,
+          nameZh: chosen.nameZh,
+          desc: chosen.desc,
+          category: chosen.category,
+          rarity: chosen.rarity,
+          level: currentLvl + 1,
+          maxLevel: chosen.maxLevel,
+          statDiffText: (p: Player) => chosen.statDiffText(p, currentLvl + 1),
+          apply: (p: Player, level: number) => chosen.apply(p, level),
+        });
+      }
+    }
+  }
+
   // Early-game archetype support: for Epsilon Carrier at early levels (<= 1 upgrade taken),
   // guarantee at least one summon upgrade appears in the first offering so the summon build starts cleanly.
-  if (isCarrier && activeKeys.length <= 1) {
+  if (isCarrier && activeKeys.length <= 1 && selected.length < targetCount) {
     const summonIdx = candidates.findIndex((item) => item.def.category === 'summon');
     if (summonIdx >= 0) {
       const chosen = candidates.splice(summonIdx, 1)[0].def;

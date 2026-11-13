@@ -3,11 +3,13 @@ import { GAME_MODES } from '../core/modes';
 import { CARD_POOLS, poolForMode } from '../cards/upgradePools';
 import { ALL_UPGRADES } from '../cards/upgrades';
 import { OVERFLOW_UPGRADES } from '../cards/overflowUpgrades';
+import { MONSTER_UPGRADES } from '../cards/monsterUpgrades';
 
 describe('poolForMode', () => {
   it('reads the mode table by default', () => {
     expect(poolForMode(GAME_MODES.standard)).toBe(ALL_UPGRADES);
     expect(poolForMode(GAME_MODES.overflow)).toBe(OVERFLOW_UPGRADES);
+    expect(poolForMode(GAME_MODES.predator)).toBe(MONSTER_UPGRADES);
     expect(poolForMode(GAME_MODES.sandbox)).toBe(ALL_UPGRADES);
   });
 

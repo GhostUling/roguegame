@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { UpgradeOption, Player } from '../game/core/types';
 import { sound } from '../game/infra/audio';
+import { getSynergyHintsForCard } from '../game/systems/resonanceSynergies';
 import {
   Zap,
   Shield,
@@ -104,7 +105,15 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
     }
   };
 
-  const getCategoryBadge = (category?: string) => {
+  const isPredator = player.gameMode === 'predator';
+
+  const getCategoryBadge = (category?: string, key?: string) => {
+    if (key?.startsWith('apex_')) {
+      return { text: '主宰异化 · APEX', color: 'text-rose-300 bg-rose-950/70 border-rose-500/50' };
+    }
+    if (key?.startsWith('swarm_')) {
+      return { text: '虫群统御 · SWARM', color: 'text-lime-300 bg-lime-950/70 border-lime-500/50' };
+    }
     switch (category) {
       case 'summon':
         return { text: '无人机矩阵', color: 'text-sky-300 bg-sky-950/60 border-sky-500/40' };
@@ -122,6 +131,25 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
   };
 
   const getUpgradeIcon = (key: string) => {
+    if (key.startsWith('apex_')) {
+      if (key === 'apex_carapace') return <Shield className="text-rose-400" size={26} />;
+      if (key === 'apex_kinetic_rend') return <FastForward className="text-rose-400" size={26} />;
+      if (key === 'apex_corrosive_aura') return <Radio className="text-rose-400" size={26} />;
+      if (key === 'apex_overcharge') return <Target className="text-rose-400" size={26} />;
+      if (key === 'apex_executioner' || key === 'apex_neurotoxin') {
+        return <Skull className="text-rose-400" size={26} />;
+      }
+      return <Flame className="text-rose-400" size={26} />;
+    }
+    if (key.startsWith('swarm_')) {
+      if (key === 'swarm_corpse_blast') return <Bomb className="text-lime-400" size={26} />;
+      if (key === 'swarm_overwhelming') return <Layers className="text-lime-400" size={26} />;
+      if (key === 'swarm_chitin_shield') return <Shield className="text-lime-400" size={26} />;
+      if (key === 'swarm_spore_cloud' || key === 'swarm_spore_mine') {
+        return <Radio className="text-lime-400" size={26} />;
+      }
+      return <Activity className="text-lime-400" size={26} />;
+    }
     switch (key) {
       case 'fire_rate':
         return <Zap className="text-amber-400" size={26} />;
@@ -164,6 +192,24 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       case 'executioner':
       case 'glass_cannon':
         return <Skull className="text-rose-500" size={26} />;
+      case 'gaster_blasters':
+        return <Skull className="text-cyan-300" size={26} />;
+      case 'void_iaijutsu':
+        return <Zap className="text-purple-400" size={26} />;
+      case 'gate_of_babylon':
+        return <Sparkles className="text-amber-400" size={26} />;
+      case 'singularity_meteor':
+        return <Flame className="text-orange-400" size={26} />;
+      case 'divine_ion_beam':
+        return <Activity className="text-sky-300" size={26} />;
+      case 'prism_aegis':
+        return <Shield className="text-cyan-300" size={26} />;
+      case 'mirage_blades':
+        return <Layers className="text-pink-400" size={26} />;
+      case 'resonance_overclock':
+      case 'cataclysm_matrix':
+      case 'titan_hyper_shield':
+        return <Sparkles className="text-violet-400" size={26} />;
       default:
         return <Zap className="text-cyan-400" size={26} />;
     }
@@ -174,13 +220,17 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
       <div className="w-full max-w-4xl flex flex-col items-center gap-5">
         {/* Header */}
         <div className="text-center space-y-1">
-          <div className="text-xs uppercase font-mono-numbers tracking-widest text-cyan-400 font-semibold">
-            GEOMETRIC EVOLUTION // 突破跃迁
+          <div
+            className={`text-xs uppercase font-mono-numbers tracking-widest font-semibold ${
+              isPredator ? 'text-rose-400' : 'text-cyan-400'
+            }`}
+          >
+            {isPredator ? 'MUTATION EVOLUTION // 突变进化' : 'GEOMETRIC EVOLUTION // 突破跃迁'}
           </div>
           <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white flex items-center justify-center gap-3">
-            <span className="text-cyan-400">⚡</span>
-            <span>选择核心构筑强化</span>
-            <span className="text-cyan-400">⚡</span>
+            <span className={isPredator ? 'text-rose-400' : 'text-cyan-400'}>⚡</span>
+            <span>{isPredator ? '选择主宰异化与虫群统御' : '选择核心构筑强化'}</span>
+            <span className={isPredator ? 'text-rose-400' : 'text-cyan-400'}>⚡</span>
           </h2>
           <div className="flex items-center justify-center gap-4 text-xs text-slate-400">
             <span>按数字键 <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-mono-numbers">1</kbd>、<kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-mono-numbers">2</kbd>、<kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-mono-numbers">3</kbd> 选择</span>
@@ -207,7 +257,12 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
           {upgrades.map((u, idx) => {
             const config = getRarityConfig(u.rarity);
-            const catBadge = getCategoryBadge(u.category);
+            const catBadge = getCategoryBadge(u.category, u.key);
+            const synHints = getSynergyHintsForCard(player, u.key);
+            const primaryHint =
+              synHints.find((h) => h.willComplete) ??
+              synHints.find((h) => h.alreadyActive) ??
+              synHints[0];
             return (
               <button
                 key={u.id}
@@ -267,6 +322,28 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                   <p className="text-xs text-slate-300 leading-relaxed min-h-[38px]">
                     {u.desc}
                   </p>
+
+                  {/* Cross-Skill Resonance Synergy Callout */}
+                  {primaryHint && (
+                    <div
+                      className={`text-[10px] font-mono-numbers px-2 py-1 rounded border flex items-center gap-1.5 ${
+                        primaryHint.willComplete
+                          ? 'bg-fuchsia-950/70 border-fuchsia-400/70 text-fuchsia-200 shadow-[0_0_12px_rgba(232,121,249,0.28)]'
+                          : primaryHint.alreadyActive
+                          ? 'bg-violet-950/50 border-violet-500/50 text-violet-200'
+                          : 'bg-slate-800/70 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <Sparkles size={11} className="shrink-0 text-fuchsia-300" />
+                      <span className="truncate font-semibold">
+                        {primaryHint.willComplete
+                          ? `选择即激活联动：${primaryHint.synergy.nameZh}`
+                          : primaryHint.alreadyActive
+                          ? `已联动激活：${primaryHint.synergy.nameZh}`
+                          : `可配合联动：${primaryHint.synergy.nameZh}`}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Stat Diff preview */}

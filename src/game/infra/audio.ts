@@ -675,6 +675,306 @@ class SoundEngine {
       // Ignore
     }
   }
+
+  /**
+   * Gaster Blaster Charge Hum
+   */
+  public playGasterCharge() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.45);
+
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.5);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Gaster Blaster High-Energy Beam Shot
+   */
+  public playGasterBeam() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(1200, now);
+      osc.frequency.exponentialRampToValueAtTime(160, now + 0.2);
+
+      gain.gain.setValueAtTime(0.24, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.23);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Void Iaijutsu Flash Dash
+   */
+  public playIaijutsuDash() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(700, now);
+      osc.frequency.exponentialRampToValueAtTime(1800, now + 0.08);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.11);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Void Iaijutsu Sheathing Metallic Click (Tsuba lock)
+   */
+  public playIaijutsuSheath() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(2400, now);
+      osc.frequency.setValueAtTime(3200, now + 0.02);
+
+      gain.gain.setValueAtTime(0.22, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.09);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Spatial Dimensional Shatter Blast
+   */
+  public playSpatialShatter() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(45, now + 0.35);
+
+      gain.gain.setValueAtTime(0.28, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Gate of Babylon Golden Gate Open Chime
+   */
+  public playBabylonGate() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+      osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+      osc.frequency.setValueAtTime(1046.5, now + 0.24); // C6
+
+      gain.gain.setValueAtTime(0.16, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.52);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Gate of Babylon Sword Launch
+   */
+  public playBabylonSword() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1100 + Math.random() * 300, now);
+      osc.frequency.exponentialRampToValueAtTime(320, now + 0.12);
+
+      gain.gain.setValueAtTime(0.14, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.15);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Singularity Meteor Crash Impact
+   */
+  public playMeteorCrash() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(80, now);
+      osc.frequency.exponentialRampToValueAtTime(25, now + 0.6);
+
+      gain.gain.setValueAtTime(0.35, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.68);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Divine Ion Beam Sky Strike
+   */
+  public playIonBeam() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(1600, now);
+      osc.frequency.exponentialRampToValueAtTime(90, now + 0.45);
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.52);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Prism Aegis Barrier Reflection Ping
+   */
+  public playAegisReflect() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1800, now);
+      osc.frequency.setValueAtTime(2400, now + 0.04);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.11);
+    } catch {
+      // Ignore
+    }
+  }
+
+  /**
+   * Mirage Blades Supersonic Salvo
+   */
+  public playMirageLaunch() {
+    if (this.isMuted || !this.ctx || !this.masterGain) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1400, now);
+      osc.frequency.exponentialRampToValueAtTime(700, now + 0.15);
+
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.2);
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 export const sound = new SoundEngine();

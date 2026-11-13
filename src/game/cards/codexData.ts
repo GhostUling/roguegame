@@ -460,4 +460,130 @@ export const CODEX_DETAILS: Record<string, CodexDetail> = {
     ],
     tacticalTip: '在怪潮极其庞大不敢突进时，依靠远程击杀攒满升级条，一旦升级立即全图吸走成百上千颗宝石，往往能引发连续升级 2~3 次的狂暴节奏！',
   },
+
+  gaster_blasters: {
+    quote: '虚空中具象出上古巨兽的纯几何颅骨，其眼眶所凝视之处，唯余绝对湮灭。',
+    primaryRole: '超阶包围打击 / 贯穿全图爆发',
+    recommendedArchetype: '召唤激光流 / 精英点杀',
+    levels: [
+      { title: '龙骨具现', description: '周期性召唤 6 门几何龙骨浮游炮将高威胁目标包围成圈，依次回旋喷射贯穿光柱' },
+      { title: '八极锁灭', description: '炮台数增至 8 门，轰击冷却缩短至 5.5 秒，每道激光伤害提升至 5.0 倍' },
+      { title: '万象终焉 [MAX]', description: '炮台数达到 12 门！轰击冷却缩短至 4.0 秒，光柱化作全屏毁灭死光，伤害提升至 7.5 倍' },
+    ],
+    synergies: [
+      { targetKey: 'gate_of_babylon', synergyTitle: '王庭处刑 · 超阶联动', description: '龙骨炮环锁定目标时，炮环圆周同步洞开黄金裂门向圆心倾泻 8 柄贯穿金剑。' },
+      { targetKey: 'singularity_meteor', synergyTitle: '裂界锁灭 · 超阶联动', description: '龙骨光束命中处于陨星引力场中的敌人时，触发 +45% 碎裂暴击伤害。' },
+      { targetKey: 'summon_drone', synergyTitle: '机械神域', description: '无人机护航巡游，龙骨炮台点名处决，全自动超凡火力网。' },
+      { targetKey: 'summon_railgun', synergyTitle: '聚能死光连线', description: '轨道炮击穿外层，龙骨光环内向聚焦，瞬间蒸发任何首领。' },
+    ],
+    tacticalTip: '当场上存在 Boss 或精英怪时，龙骨炮台会优先将其死死包围；多重光束贯穿重叠，能瞬间制造出成千上万的恐怖伤害！',
+  },
+
+  void_iaijutsu: {
+    quote: '斩击先于时间抵达，收刀入鞘的脆响，即是维度坍塌的丧钟。',
+    primaryRole: '虚影瞬斩 / 空间撕裂大范围处刑',
+    recommendedArchetype: '安全站桩 / 极意拔刀流',
+    levels: [
+      { title: '一闪初悟', description: '机体保持安全站位，唤出暗影虚影向前穿梭斩切 220px 怪群，收刀停滞 0.14 秒后整条轨迹爆发空间坍塌撕裂造成 4.0 倍伤害' },
+      { title: '断空极意', description: '虚影斩切距离提升至 260px，冷却缩短至 4.0 秒，裂隙伤害提升至 6.5 倍，附带 0.8 秒空间硬直' },
+      { title: '虚空无想斩 [MAX]', description: '虚影斩切距离达到 300px！冷却缩短至 3.0 秒，裂隙伤害暴涨至 9.0 倍，撕裂整片屏幕的几何维度！' },
+    ],
+    synergies: [
+      { targetKey: 'mirage_blades', synergyTitle: '断空引华 · 超阶联动', description: '次元居合空间裂隙引爆时，沿斩击轨迹对受创敌群直接绽放爆裂几何莲华。' },
+      { targetKey: 'divine_ion_beam', synergyTitle: '裂界锁灭 · 超阶联动', description: '居合施加的空间硬直可触发龙骨炮与天罚光柱 +45% 碎裂暴击伤害。' },
+      { targetKey: 'speed', synergyTitle: '神速极意', description: '高移动速度配合虚影拔刀，走位拉扯间无伤收割全场。' },
+      { targetKey: 'retaliation_thorns', synergyTitle: '近身断罪', description: '反伤荆棘贴脸炸裂，虚影居合收尾斩杀，近战领域所向披靡。' },
+    ],
+    tacticalTip: '虚影代为出刀斩切目标，本体不会强制冲入敌阵送死，既能穿透重围又绝对安全！',
+  },
+
+  gate_of_babylon: {
+    quote: '虚空中撕开宝库的金色裂门，无穷尽的光枪与光刃，将视界内的一切狂潮化为灰烬。',
+    primaryRole: '正面贯穿剑瀑 / 压制清屏',
+    recommendedArchetype: '弹幕重炮 / 狂暴压制流',
+    levels: [
+      { title: '宝库洞开', description: '机体后方展开金色蜂窝空间裂门，暴射 16 柄高伤穿透飞剑（最多贯穿 3 名敌人，单发 4.0 倍伤害）并引发连锁引爆' },
+      { title: '剑雨狂澜', description: '飞剑数量增至 22 柄，冷却缩短至 6.5 秒，每把飞剑单发伤害提升至 6.5 倍' },
+      { title: '万象天归 [MAX]', description: '飞剑数量暴增至 30 柄！冷却缩短至 5.0 秒，伤害提升至 9.5 倍，全屏正面化作毁灭剑瀑！' },
+    ],
+    synergies: [
+      { targetKey: 'gaster_blasters', synergyTitle: '王庭处刑 · 超阶联动', description: '龙骨炮环锁定目标时，炮环圆周同步向圆心倾泻 8 柄贯穿黄金光剑。' },
+      { targetKey: 'prism_aegis', synergyTitle: '圣域万象 · 超阶联动', description: '棱镜圣域爆发排斥震波时，同步向 360° 齐射 8 柄贯穿黄金光剑。' },
+      { targetKey: 'multi_shot', synergyTitle: '弹幕狂潮', description: '主炮多重射击与万象剑雨叠加，形成无死角的正前方推土机。' },
+      { targetKey: 'bouncing_blades', synergyTitle: '飞刃折射回响', description: '光剑穿透爆裂出弹射飞刃，在怪堆中进行二次弹跳屠戮。' },
+    ],
+    tacticalTip: '飞剑拥有极高单体倍率并可连续贯穿 3 个目标，正前方怪群再密集也会被这波暴风雨生生撕碎！',
+  },
+
+  singularity_meteor: {
+    quote: '这并非单纯的落石，而是时空自身无法承受的绝对奇点坍缩。',
+    primaryRole: '怪堆精准锁定 / 重力残坑与二段坍缩',
+    recommendedArchetype: '引力聚怪 / 大招爆发流',
+    levels: [
+      { title: '陨核降临', description: '自动搜寻敌群最密集区域召唤超重力陨星砸落造成 8.0 倍伤害，地面遗留持续吸聚减速的灼热裂坑并触发二段奇点坍缩余震' },
+      { title: '引力透镜', description: '吸附半径扩大至 320px，冷却缩短至 8.0 秒，撞击与裂坑余震伤害同步提升至 13.0 倍基准' },
+      { title: '星体坍缩 [MAX]', description: '吸附半径暴涨至 400px（几乎覆盖大半个屏幕）！冷却仅 6.0 秒，主爆伤害达到惊人的 20.0 倍并伴随毁灭二段坍缩！' },
+    ],
+    synergies: [
+      { targetKey: 'divine_ion_beam', synergyTitle: '星陨聚变 · 超阶联动', description: '陨星砸落瞬间在落点中心垂直劈下神圣离子巨柱，双场共振电离全坑。' },
+      { targetKey: 'gaster_blasters', synergyTitle: '裂界锁灭 · 超阶联动', description: '龙骨光束命中陨星引力坑内的敌人时触发 +45% 碎裂暴击伤害。' },
+      { targetKey: 'nova_pulse', synergyTitle: '聚拢即爆震', description: '陨星与残余重力坑将全场怪群吸附到一处，脉冲波瞬间将其全部清空。' },
+      { targetKey: 'gravity_siphon', synergyTitle: '深渊虹吸', description: '全图引力协同，敌人物资无一遁形，全场尽在掌中。' },
+    ],
+    tacticalTip: '陨星砸落后不仅在地面留下持续牵引并灼烧敌人的崩裂火山口，1.15 秒后还会爆发二次奇点坍缩清场！',
+  },
+
+  divine_ion_beam: {
+    quote: '天空撕开赤红的死线，随后降下的，是洗净一切杂质的神圣等离子天罚。',
+    primaryRole: '纵向全屏贯穿 / 留存高伤电网',
+    recommendedArchetype: '雷霆天罚 / 首领特攻流',
+    levels: [
+      { title: '天基锁定', description: '三道激光瞄准高威胁目标，垂直轰下一道宽 70px 的贯穿天际等离子巨柱，地面遗留 4.5 秒持久高伤导电雷区' },
+      { title: '离子裂解', description: '光柱宽度拓宽至 90px，冷却缩短至 7.0 秒，伤害提升至 9.5 倍' },
+      { title: '终末审判 [MAX]', description: '光柱宽度达到 120px 巨壁！冷却缩短至 5.0 秒，伤害高达 14.0 倍，地面雷区电击频率与范围大幅覆盖！' },
+    ],
+    synergies: [
+      { targetKey: 'singularity_meteor', synergyTitle: '星陨聚变 · 超阶联动', description: '坍缩陨星砸落瞬间直接在落点追加一道神圣离子巨柱，形成双场毁灭共振。' },
+      { targetKey: 'void_iaijutsu', synergyTitle: '裂界锁灭 · 超阶联动', description: '光柱命中居合硬直或陨星引力区敌人时，触发 +45% 碎裂暴击伤害。' },
+      { targetKey: 'chain_lightning', synergyTitle: '天雷地火', description: '雷霆巨柱轰下后，地面电网与跳跃闪电链产生共振，全场连锁瘫痪。' },
+      { targetKey: 'summon_railgun', synergyTitle: '死光双线', description: '轨道重炮狙击穿线，离子天罚从天劈落，纵横交错撕碎一切大怪。' },
+    ],
+    tacticalTip: '对 Boss 和坦克怪拥有绝对威慑力，残留 4.5 秒的地面等离子场能让企图穿越的怪潮持续承受高频电离撕裂。',
+  },
+
+  prism_aegis: {
+    quote: '任何投向光明的恶意，终将被八面棱镜加倍奉还。',
+    primaryRole: '弹幕反弹反杀 / 贴身持续烧灼安全区',
+    recommendedArchetype: '近战反伤 / 绝对防御流',
+    levels: [
+      { title: '圣域展开', description: '机体周围展开 130px 八角全息圣域，持续释放光环脉冲灼烧并轻推近身敌群，触碰弹幕以 2 倍速度折射反杀；满充能爆发排斥震波' },
+      { title: '棱镜超频', description: '圣域半径扩大至 155px，震荡充能门槛降低至 6 发，震波伤害提升至 5.5 倍' },
+      { title: '神圣绝对领域 [MAX]', description: '圣域半径达到 180px！仅需吸收 4 发弹幕即刻触发狂暴震波，震波伤害高达 8.0 倍！' },
+    ],
+    synergies: [
+      { targetKey: 'gate_of_babylon', synergyTitle: '圣域万象 · 超阶联动', description: '排斥震波爆发时同步向 360° 齐射 8 柄贯穿黄金光剑。' },
+      { targetKey: 'mirage_blades', synergyTitle: '圣域万象 · 寒樱齐射', description: '排斥震波爆发时若持有幻影剑雨，向四周齐射 8 道极寒穿透飞刃。' },
+      { targetKey: 'shield', synergyTitle: '双重圣壁', description: '常规护盾抵挡失误，棱镜圣域主动折射反杀，构筑牢不可破的堡垒。' },
+      { targetKey: 'retaliation_thorns', synergyTitle: '刺铠圣域', description: '反弹弹幕的同时，敌人只要碰触到力场即刻遭受荆棘与周期脉冲绞杀。' },
+    ],
+    tacticalTip: '不仅能反弹满屏弹幕，周期性的圣域外圈脉冲还能在空窗期持续逼退并熔毁贴脸怪潮！',
+  },
+
+  mirage_blades: {
+    quote: '双月交辉，极速飞转的寒冰飞刃，在刺入心脏的瞬间化作盛开的死亡莲华。',
+    primaryRole: '常驻护体绞杀 + 双段全屏往返穿心',
+    recommendedArchetype: '刺客飞刃 / 冰霜斩杀流',
+    levels: [
+      { title: '幻影护体', description: '8 枚冰蓝飞剑环绕护体并直接绞杀贴身敌群，每 4.5 秒快速依次贯穿射出屏幕后再同时回返交叉合拢，沿途绽放几何莲华' },
+      { title: '飞华乱舞', description: '剑刃增至 12 枚，两段式往返剑雨冷却缩短至 3.2 秒，伤害提升至 4.5 倍' },
+      { title: '万剑归宗 [MAX]', description: '剑刃暴增至 16 枚！每 2.2 秒狂风暴雨般急速出鞘与回返贯穿全屏，伤害暴涨至 6.5 倍，满屏莲华竞相绽放！' },
+    ],
+    synergies: [
+      { targetKey: 'void_iaijutsu', synergyTitle: '断空引华 · 超阶联动', description: '次元居合空间裂隙引爆时，沿斩击轨迹直接绽放爆裂几何莲华。' },
+      { targetKey: 'prism_aegis', synergyTitle: '圣域万象 · 超阶联动', description: '棱镜圣域爆发排斥震波时，向外圈 360° 同步发射 8 道穿透幻影飞刃。' },
+      { targetKey: 'orbit_satellite', synergyTitle: '双重环绕风暴', description: '轨道卫星与幻影剑阵双层环绕，任何近身敌人未到机体前已被绞成碎屑。' },
+      { targetKey: 'cryo_freeze', synergyTitle: '极寒绽放', description: '剑刃击中敌人附加高额冰冻易伤，莲花绽放时引发大范围冰霜霜冻。' },
+    ],
+    tacticalTip: '即使在技能冷却期间，环绕在身侧的飞剑也能对突脸敌人造成连续切伤；发招后先外射离屏再回返穿心，双向两次收割全场！',
+  },
 };

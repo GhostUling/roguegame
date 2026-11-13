@@ -80,7 +80,7 @@ export interface Drone {
   lastMissileTime?: number;
 }
 
-export type GameMode = 'standard' | 'twin_link' | 'overflow' | 'sandbox' | 'predator';
+export type GameMode = 'standard' | 'twin_link' | 'overflow' | 'sandbox' | 'predator' | 'resonance';
 
 export interface Player {
   characterId: CharacterId;
@@ -118,6 +118,7 @@ export interface Player {
   critChance: number;
   critMultiplier: number;
   shieldRegenRate: number;
+  hpRegenRate?: number; // Continuous HP recovery per second (active even in combat)
   invincibleTimer: number;
   timeSinceLastDamage: number; // Out-of-combat timer for health recovery
 
@@ -227,6 +228,80 @@ export interface Player {
   overdriveScale: number; // speed multiplier while overdriving, 0 = off
   overdriveIdle: number; // seconds spent standing still while overdriving
   gamblerRolls: number; // free upgrade advances rolled on each level-up
+
+  // Synergy Super-Weapons
+  gasterLevel: number;
+  gasterInterval: number; // seconds between rings, 0 = card not taken
+  gasterTimer: number;
+  gasterDamageScale: number;
+  voidIaijutsuLevel: number;
+  voidIaijutsuInterval: number; // seconds between dimensional slashes, 0 = card not taken
+  voidIaijutsuTimer: number;
+  voidIaijutsuDamageScale: number;
+
+  babylonLevel: number;
+  babylonInterval: number;
+  babylonTimer: number;
+  babylonDamageScale: number;
+
+  meteorLevel: number;
+  meteorInterval: number;
+  meteorTimer: number;
+  meteorDamageScale: number;
+
+  ionLevel: number;
+  ionInterval: number;
+  ionTimer: number;
+  ionDamageScale: number;
+
+  aegisLevel: number;
+  aegisRadius: number;
+  aegisDamageScale: number;
+  aegisReflectedCount: number;
+
+  mirageLevel: number;
+  mirageInterval: number;
+  mirageTimer: number;
+  mirageDamageScale: number;
+
+  // Predator Monster Upgrades (see monsterUpgrades.ts)
+  pilotNeuroSlow?: number;
+  pilotNeuroDuration?: number;
+  pilotRendBonus?: number;
+  pilotRendDuration?: number;
+  pilotMaxHpScale?: number;
+  pilotDamageReductionMax?: number;
+  pilotBloodlustCap?: number;
+  pilotAuraRadius?: number;
+  pilotAuraDamage?: number;
+  pilotLeechRate?: number;
+  pilotUltCooldownRefund?: number;
+  pilotExtraInvuln?: number;
+  pilotRangeDamageScale?: number;
+  pilotLockSpeedScale?: number;
+  pilotSlamRadiusScale?: number;
+  pilotSlamDamageScale?: number;
+  pilotBroodExtra?: number;
+  pilotDesperateDamageBonus?: number;
+  pilotFrenzyBonus?: number;
+  pilotContactScale?: number;
+
+  swarmCorpseBlastRadius?: number;
+  swarmCorpseBlastDamage?: number;
+  swarmSporeCloudDuration?: number;
+  swarmSporeCloudSlow?: number;
+  swarmCapBonus?: number;
+  swarmSpawnScaleBonus?: number;
+  swarmPackDamageBonus?: number;
+  swarmHpScale?: number;
+  swarmLeechShare?: number;
+  swarmPincerCritMultiplier?: number;
+  swarmAdrenalSpeedBonus?: number;
+  swarmBiteDamageScale?: number;
+  swarmBeaconBonus?: number;
+  swarmMineChance?: number;
+  swarmMineDamage?: number;
+  swarmEliteChance?: number;
 
   // Meta deckbuilding & reroll
   rerollCount: number;
@@ -398,6 +473,12 @@ export interface PredatorSnapshot {
   timeLeft: number;
   /** Total damage dealt by the player to the prey. */
   damageDealt: number;
+  /** Evolution energy accumulated towards next monster upgrade. */
+  energy: number;
+  /** Evolution energy needed for next monster upgrade. */
+  energyTarget: number;
+  /** Current mutation / evolution level of the predator. */
+  monsterLevel: number;
   /** The three corner slots, in slot order; an empty slot is null. */
   respawnSlots: (EnemyType | null)[];
   /** What the prey has grown into, oldest first. */

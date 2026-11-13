@@ -31,7 +31,7 @@ export interface GameModeDef {
   /** Max HP is the sum of both pilots' chassis HP. */
   pooledHp: boolean;
   /** Which card table the level-up hand is drawn from (see upgradePools.ts). */
-  cardPool: 'standard' | 'overflow';
+  cardPool: 'standard' | 'overflow' | 'monster' | 'resonance';
   /**
    * True for the sandbox: no wave ticks and no boss schedule. Every enemy on
    * the field was placed by the test API, so nothing buries what you are
@@ -57,7 +57,9 @@ export interface GameModeDef {
   /** Seconds of run before the clock ends it. 0 = no clock (every older mode). */
   runDurationSec: number;
   /** UI hue token; the screens map it to Tailwind classes. */
-  accent: 'cyan' | 'fuchsia' | 'amber' | 'emerald' | 'rose';
+  accent: 'cyan' | 'fuchsia' | 'amber' | 'emerald' | 'rose' | 'violet';
+  /** Base hit points multiplier for enemies in this mode (1.0 = normal). */
+  enemyHpMultiplier: number;
 }
 
 export const GAME_MODES: Record<GameMode, GameModeDef> = {
@@ -83,6 +85,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     pilotSpeedScale: 1,
     runDurationSec: 0,
     accent: 'cyan',
+    enemyHpMultiplier: 1,
   },
   twin_link: {
     id: 'twin_link',
@@ -106,6 +109,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     pilotSpeedScale: 1,
     runDurationSec: 0,
     accent: 'fuchsia',
+    enemyHpMultiplier: 1,
   },
   overflow: {
     id: 'overflow',
@@ -130,6 +134,31 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     pilotSpeedScale: 1,
     runDurationSec: 0,
     accent: 'amber',
+    enemyHpMultiplier: 1,
+  },
+  resonance: {
+    id: 'resonance',
+    name: '超阶共鸣',
+    tag: 'RESONANCE',
+    desc: '神话武装全解限：直接自选 7 大超阶神兵与专属共鸣增幅，触发双核共鸣联动！迎战 3.5 倍高密度狂暴怪潮（生命 2.2 倍）。',
+    pilotSlots: 1,
+    wingSpacing: 0,
+    spawnMultiplier: 3.5,
+    maxAlive: 240,
+    growthScale: 3.0,
+    threatScale: 1.2,
+    pooledHp: false,
+    cardPool: 'resonance',
+    manualSpawn: false,
+    devOnly: false,
+    heroPrey: false,
+    heroHpScale: 0,
+    swarmMultiplier: 0,
+    contactDamageScale: 1,
+    pilotSpeedScale: 1,
+    runDurationSec: 0,
+    accent: 'violet',
+    enemyHpMultiplier: 2.2,
   },
   sandbox: {
     id: 'sandbox',
@@ -153,6 +182,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     pilotSpeedScale: 1,
     runDurationSec: 0,
     accent: 'emerald',
+    enemyHpMultiplier: 1,
   },
   predator: {
     id: 'predator',
@@ -166,7 +196,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     growthScale: 1,
     threatScale: 0,
     pooledHp: false,
-    cardPool: 'standard',
+    cardPool: 'monster',
     manualSpawn: false,
     devOnly: false,
     heroPrey: true,
@@ -176,6 +206,7 @@ export const GAME_MODES: Record<GameMode, GameModeDef> = {
     pilotSpeedScale: 2.4,
     runDurationSec: 300,
     accent: 'rose',
+    enemyHpMultiplier: 1,
   },
 };
 

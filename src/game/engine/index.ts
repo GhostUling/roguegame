@@ -41,6 +41,7 @@ import {
 } from '../systems/drones';
 import { GameModeDef, isPaired, modeOfPlayer } from '../core/modes';
 import { findUpgrade, poolForMode } from '../cards/upgradePools';
+import { ALL_UPGRADES, atLevel } from '../cards/upgrades';
 import { HYPERCRIT_MULTIPLIER } from '../cards/overflowUpgrades';
 import { MAX_TURRETS, TURRET_FIRE_INTERVAL, TURRET_LIFETIME, turretShotDamage } from '../systems/turrets';
 import { GRID_FLASH, GRID_STRIKE_AT, GRID_STUN, gridLineDistance, gridVerdictDamage } from '../systems/gridVerdict';
@@ -61,7 +62,121 @@ import {
   riftNodePath,
   riftTickDamage,
 } from '../systems/riftLance';
-import { ENEMY_TYPES, EnemyTypeDef, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from '../core/enemyTypes';
+import {
+  GasterRing,
+  GASTER_BEAM_LENGTH,
+  GASTER_BEAM_WIDTH,
+  GASTER_RADIUS,
+  LVL_GASTER_COUNT,
+  LVL_GASTER_INTERVAL,
+  LVL_GASTER_DAMAGE_SCALE,
+  beamHitsCircle,
+  createBlasterUnits,
+  gasterBeamDamage,
+  gasterTotalDuration,
+} from '../systems/gasterBlaster';
+import {
+  IaijutsuSlash,
+  IAIJUTSU_CUT_DURATION,
+  IAIJUTSU_CUT_WIDTH,
+  IAIJUTSU_SHATTER_DURATION,
+  IAIJUTSU_SHEATH_PAUSE,
+  LVL_IAIJUTSU_DISTANCE,
+  LVL_IAIJUTSU_INTERVAL,
+  LVL_IAIJUTSU_DAMAGE_SCALE,
+  calculateIaijutsuDestination,
+  cutHitsEnemy,
+  iaijutsuDamage,
+} from '../systems/voidIaijutsu';
+import {
+  BabylonGate,
+  BabylonSword,
+  LVL_BABYLON_COUNT,
+  LVL_BABYLON_INTERVAL,
+  LVL_BABYLON_DAMAGE_SCALE,
+  calculateGateSlotPosition,
+  swordHitsEnemy,
+  babylonDamage,
+  BABYLON_SWORD_SPEED,
+  BABYLON_SWORD_LENGTH,
+  BABYLON_BURST_RADIUS,
+  BABYLON_BURST_DAMAGE_SHARE,
+  BABYLON_SWORD_PIERCE,
+} from '../systems/gateOfBabylon';
+import {
+  SingularityMeteor,
+  calculateMeteorPull,
+  enemyInMeteorBlast,
+  meteorDamage,
+  METEOR_FALL_DURATION,
+  METEOR_EXPLOSION_RADIUS,
+  METEOR_CRATER_DURATION,
+  METEOR_AFTERSHOCK_DELAY,
+  METEOR_AFTERSHOCK_DAMAGE_SHARE,
+  METEOR_CRATER_TICK_RATE,
+  METEOR_CRATER_TICK_DAMAGE_SHARE,
+  LVL_METEOR_PULL_RADIUS,
+  LVL_METEOR_INTERVAL,
+  LVL_METEOR_DAMAGE_SCALE,
+  findDensestEnemyCluster,
+} from '../systems/singularityMeteor';
+import {
+  DivineIonStrike,
+  enemyInIonPillar,
+  enemyInIonGround,
+  ionDamage,
+  ION_TARGETING_TIME,
+  ION_PILLAR_DURATION,
+  ION_GROUND_DURATION,
+  ION_GROUND_TICK_RATE,
+  ION_GROUND_RADIUS,
+  ION_GROUND_DAMAGE_SHARE,
+  LVL_ION_WIDTH,
+  LVL_ION_INTERVAL,
+  LVL_ION_DAMAGE_SCALE,
+} from '../systems/divineIonBeam';
+import {
+  projectileHitsAegisBarrier,
+  calculateReflectedVelocity,
+  aegisBurstDamage,
+  AEGIS_PULSE_INTERVAL,
+  AEGIS_PULSE_DAMAGE_SHARE,
+  LVL_AEGIS_BURST_THRESHOLD,
+  LVL_AEGIS_RADIUS,
+  LVL_AEGIS_BURST_DAMAGE_SCALE,
+} from '../systems/prismAegis';
+import {
+  MirageBlade,
+  MirageBloom,
+  calculateBladeOrbitPos,
+  calculateBladeHomingVelocity,
+  mirageDamage,
+  LVL_MIRAGE_COUNT,
+  LVL_MIRAGE_INTERVAL,
+  LVL_MIRAGE_DAMAGE_SCALE,
+  MIRAGE_ORBIT_RADIUS,
+  MIRAGE_ORBIT_SPEED,
+  MIRAGE_ORBIT_HIT_COOLDOWN,
+  MIRAGE_ORBIT_CONTACT_SHARE,
+  MIRAGE_OUTBOUND_STAGGER,
+  MIRAGE_OUTBOUND_SPEED,
+  MIRAGE_RETURN_SPEED,
+  MIRAGE_WAIT_PAUSE,
+  MIRAGE_OFFSCREEN_MARGIN,
+  MIRAGE_BLOOM_RADIUS,
+  MIRAGE_BLOOM_DURATION,
+  isBladeOutsideScreen,
+  clampBladeToOffscreenRim,
+  canSpawnMirageBloom,
+} from '../systems/mirageBlades';
+import {
+  RESONANCE_RIFT_BONUS_MULT,
+  GASTER_BABYLON_RING_SWORDS,
+  AEGIS_ARSENAL_RING_COUNT,
+  hasResonanceSynergy,
+  isEnemyUnderSpatialControl,
+} from '../systems/resonanceSynergies';
+import { ENEMY_TYPES, EnemyTypeDef, SpawnableEnemyType, enemyDamageFor, enemyHpFor, enemySpeedFor, pickEnemyType } from '../core/enemyTypes';
 import { renderScene } from '../render/renderer';
 import { EnemyAiCue, EnemyBolt, stepEnemyAi } from './enemyAi';
 import { circlesTouch, firstWingHit, roundHitsEnemy } from './collision';
@@ -69,6 +184,7 @@ import { afterDroneShield, statusDamageMultiplier } from './damage';
 import { GEM_CAP, advanceLevel, bankGem, gemDropFor, gemPullSpeed, killScore } from './drops';
 import { DebugEvent, pushDebugEvent } from './debugTrace';
 import {
+  MORPH_INVULN,
   PILOT_BITE_COOLDOWN,
   ULT_BROOD_COUNT,
   ULT_CHARGE_SECONDS,
@@ -143,6 +259,14 @@ export class GameEngine {
   public echoes: EchoVolley[] = [];
   public lances: Lance[] = [];
   public rifts: Rift[] = [];
+  public gasterRings: GasterRing[] = [];
+  public iaijutsuSlashes: IaijutsuSlash[] = [];
+  public babylonGates: BabylonGate[] = [];
+  public babylonSwords: BabylonSword[] = [];
+  public meteors: SingularityMeteor[] = [];
+  public ionStrikes: DivineIonStrike[] = [];
+  public mirageBlades: MirageBlade[] = [];
+  public mirageBlooms: MirageBloom[] = [];
   /** Predator: you. Null outside Predator; death swaps the form on the spot. */
   public pilot: Pilot | null = null;
   /** The three slots the corner panel binds. Fixed length, holes are null. */
@@ -160,6 +284,17 @@ export class GameEngine {
   private runResult: 'none' | 'victory' | 'timeout' = 'none';
   private preyStrafeTimer: number = 0;
   private preyStrafeSign: number = 1;
+  /** Predator: evolution energy accumulated towards next monster upgrade choice. */
+  public predatorEnergy: number = 0;
+  public predatorEnergyTarget: number = 100;
+  public predatorLevel: number = 1;
+  private preySlowTimer: number = 0;
+  private preyRendTimer: number = 0;
+  private preyBeaconTimer: number = 0;
+  private swarmAdrenalTimer: number = 0;
+  private pilotBloodlustStacks: number = 0;
+  private pilotBloodlustTimer: number = 0;
+  private auraTickTimer: number = 0;
 
   // System
   private animFrameId: number = 0;
@@ -202,6 +337,8 @@ export class GameEngine {
   private bossWarningTimer: number = 0;
   /** Sandbox only: contact and enemy rounds stop subtracting HP. */
   public devInvincible: boolean = false;
+  /** Settings toggle: player/pilot immune to all incoming damage in any mode. */
+  public settingsInvincible: boolean = false;
   /** Runtime trace switch (pause menu): records hits and derived-round decisions. */
   public debugTraceEnabled: boolean = false;
   public debugEvents: DebugEvent[] = [];
@@ -215,6 +352,16 @@ export class GameEngine {
   private nextEchoId: number = 1;
   private nextLanceId: number = 1;
   private nextRiftId: number = 1;
+  private nextGasterRingId: number = 1;
+  private nextIaijutsuSlashId: number = 1;
+  private nextBabylonGateId: number = 1;
+  private nextBabylonSwordId: number = 1;
+  private nextMeteorId: number = 1;
+  private nextIonStrikeId: number = 1;
+  private nextMirageBladeId: number = 1;
+  private nextMirageBloomId: number = 1;
+  private mirageOrbitHitCooldowns: Map<number, number> = new Map();
+  private aegisPulseTimer: number = 0;
   /** Lance Kappa's annihilation spear counts down before it fires. */
   private spearWindup: number = 0;
   private spearAngle: number = 0;
@@ -330,6 +477,16 @@ export class GameEngine {
     this.echoes = [];
     this.lances = [];
     this.rifts = [];
+    this.gasterRings = [];
+    this.iaijutsuSlashes = [];
+    this.babylonGates = [];
+    this.babylonSwords = [];
+    this.meteors = [];
+    this.ionStrikes = [];
+    this.mirageBlades = [];
+    this.mirageBlooms = [];
+    this.mirageOrbitHitCooldowns.clear();
+    this.aegisPulseTimer = 0;
     this.spearWindup = 0;
     this.gameTime = 0;
     this.nextWaveTimer = 0;
@@ -351,6 +508,16 @@ export class GameEngine {
     this.runResult = 'none';
     this.preyStrafeTimer = 0;
     this.preyStrafeSign = 1;
+    this.predatorEnergy = 0;
+    this.predatorEnergyTarget = 100;
+    this.predatorLevel = 1;
+    this.preySlowTimer = 0;
+    this.preyRendTimer = 0;
+    this.preyBeaconTimer = 0;
+    this.swarmAdrenalTimer = 0;
+    this.pilotBloodlustStacks = 0;
+    this.pilotBloodlustTimer = 0;
+    this.auraTickTimer = 0;
 
     // Predator inverts the cast: `player` is the scripted prey, and you are
     // the pilot. Everything else keeps its standard meaning.
@@ -410,6 +577,16 @@ export class GameEngine {
     this.enemies = [];
     this.enemyProjectiles = [];
     this.gems = [];
+    this.gasterRings = [];
+    this.iaijutsuSlashes = [];
+    this.babylonGates = [];
+    this.babylonSwords = [];
+    this.meteors = [];
+    this.ionStrikes = [];
+    this.mirageBlades = [];
+    this.mirageBlooms = [];
+    this.mirageOrbitHitCooldowns.clear();
+    this.aegisPulseTimer = 0;
     this.bossWarningActive = false;
   }
 
@@ -417,6 +594,15 @@ export class GameEngine {
   public setDevInvincible(on: boolean) {
     if (!this.mode().manualSpawn) return;
     this.devInvincible = on;
+  }
+
+  /** Settings toggle: stop (or resume) all damage to the player in any mode. */
+  public setSettingsInvincible(on: boolean) {
+    this.settingsInvincible = on;
+  }
+
+  private isGodMode(): boolean {
+    return this.devInvincible || this.settingsInvincible;
   }
 
   /** Turns the runtime trace on or off; turning it off clears the buffer. */
@@ -891,6 +1077,13 @@ export class GameEngine {
     //     weapons, so a world freeze does not hold them either.
     this.updateEchoes(dt);
     this.updateRiftLances(dt);
+    this.updateGasterBlasters(dt);
+    this.updateVoidIaijutsu(dt);
+    this.updateGateOfBabylon(dt);
+    this.updateSingularityMeteors(dt);
+    this.updateDivineIonStrikes(dt);
+    this.updatePrismAegis(dt);
+    this.updateMirageBlades(dt);
 
     // 6. Update Orbit Satellites
     this.updateSatellites(dt);
@@ -951,11 +1144,15 @@ export class GameEngine {
       this.shakeIntensity = 0;
     }
 
-    // 18. Out-of-Combat Health Regeneration (only recovers HP after 3.0s without taking damage)
+    // 18. Health Regeneration (continuous hpRegenRate + out-of-combat shieldRegenRate after 3.0s)
     this.player.timeSinceLastDamage = (this.player.timeSinceLastDamage || 0) + dt;
     const OUT_OF_COMBAT_REGEN_TIME = 3.0;
-    if (this.player.timeSinceLastDamage >= OUT_OF_COMBAT_REGEN_TIME && this.player.hp < this.player.maxHp && !this.preyDesperate()) {
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.player.shieldRegenRate * dt);
+    const inCombatRegen = this.player.hpRegenRate || 0;
+    const outOfCombatRegen =
+      this.player.timeSinceLastDamage >= OUT_OF_COMBAT_REGEN_TIME ? this.player.shieldRegenRate : 0;
+    const totalRegen = inCombatRegen + outOfCombatRegen;
+    if (totalRegen > 0 && this.player.hp < this.player.maxHp && !this.preyDesperate()) {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + totalRegen * dt);
       if (Math.random() < 0.15 && this.particles.length < 50) {
         this.particles.push({
           id: this.nextParticleId++,
@@ -1966,6 +2163,19 @@ export class GameEngine {
       }
     }
 
+    if (this.preySlowTimer > 0) this.preySlowTimer -= dt;
+    if (this.preyRendTimer > 0) this.preyRendTimer -= dt;
+    if (this.preyBeaconTimer > 0) this.preyBeaconTimer -= dt;
+    if (this.swarmAdrenalTimer > 0) this.swarmAdrenalTimer -= dt;
+    if (this.pilotBloodlustTimer > 0) {
+      this.pilotBloodlustTimer -= dt;
+      if (this.pilotBloodlustTimer <= 0) this.pilotBloodlustStacks = 0;
+    }
+
+    const effectivePreySpeed =
+      this.player.speed *
+      (this.preySlowTimer > 0 ? Math.max(0.3, 1 - (this.player.pilotNeuroSlow || 0.2)) : 1);
+
     const order = stepPreyAi(
       {
         x: this.player.x,
@@ -1982,7 +2192,7 @@ export class GameEngine {
         strafeSign: this.preyStrafeSign,
         nearbyHostiles: hostiles,
       },
-      this.player.speed,
+      effectivePreySpeed,
       dt
     );
 
@@ -2029,16 +2239,28 @@ export class GameEngine {
       dy = this.joystickVector.y;
     }
 
+    let pilotEffectiveSpeed = pilot.speed;
+    if (this.pilotBloodlustStacks > 0) {
+      pilotEffectiveSpeed *= 1 + this.pilotBloodlustStacks * 0.08;
+    }
+    if (this.player.pilotFrenzyBonus && pilot.hp < pilot.maxHp) {
+      const lostHpFrac = Math.max(0, (pilot.maxHp - pilot.hp) / pilot.maxHp);
+      pilotEffectiveSpeed *= 1 + Math.floor(lostHpFrac * 10) * this.player.pilotFrenzyBonus;
+    }
+    if (pilot.invulnTimer > 0 && this.player.pilotExtraInvuln) {
+      pilotEffectiveSpeed *= 1.5;
+    }
+
     if (pilot.dashTimer > 0) {
       pilot.dashTimer -= dt;
-      pilot.x += pilot.dashDirX * pilot.speed * 3.8 * (dt * 60);
-      pilot.y += pilot.dashDirY * pilot.speed * 3.8 * (dt * 60);
+      pilot.x += pilot.dashDirX * pilotEffectiveSpeed * 3.8 * (dt * 60);
+      pilot.y += pilot.dashDirY * pilotEffectiveSpeed * 3.8 * (dt * 60);
     } else {
       const len = Math.hypot(dx, dy);
       if (len > 0.01) {
         const normalizer = len > 1 ? 1 / len : 1;
-        pilot.vx = dx * normalizer * pilot.speed;
-        pilot.vy = dy * normalizer * pilot.speed;
+        pilot.vx = dx * normalizer * pilotEffectiveSpeed;
+        pilot.vy = dy * normalizer * pilotEffectiveSpeed;
         pilot.angle = Math.atan2(dy, dx);
       } else {
         pilot.vx *= 0.8;
@@ -2055,22 +2277,38 @@ export class GameEngine {
 
     // 蓄力锁线: track, then freeze the line, then fire down it.
     const form = formOf(pilot.form);
+    const lockSpeedMult = 1 - (this.player.pilotLockSpeedScale || 0);
+    const lockTrackTime = ULT_LOCK_TRACK * lockSpeedMult;
+    const lockHoldTime = ULT_LOCK_HOLD * lockSpeedMult;
     if (form.kind === 'lockshot' && pilot.lockTimer > 0) {
       pilot.lockTimer += dt;
-      if (pilot.lockTimer < ULT_LOCK_TRACK) {
+      if (pilot.lockTimer < lockTrackTime) {
         pilot.aimAngle = Math.atan2(this.player.y - pilot.y, this.player.x - pilot.x);
         pilot.aimLocked = false;
       } else if (!pilot.aimLocked) {
         pilot.aimLocked = true;
         sound.playSniperLock();
       }
-      if (pilot.lockTimer >= ULT_LOCK_TRACK + ULT_LOCK_HOLD) {
+      if (pilot.lockTimer >= lockTrackTime + lockHoldTime) {
         pilot.lockTimer = 0;
         this.firePilotRound(
           pilot.aimAngle,
           ULT_LOCK_SPEED,
           Math.round(pilot.contactDamage * ULT_LOCK_SHARE)
         );
+      }
+    }
+
+    // Corrosive aura passive
+    if (this.player.pilotAuraDamage && this.player.pilotAuraRadius) {
+      this.auraTickTimer += dt;
+      if (this.auraTickTimer >= 0.5) {
+        this.auraTickTimer = 0;
+        const dx = this.player.x - pilot.x;
+        const dy = this.player.y - pilot.y;
+        if (dx * dx + dy * dy <= this.player.pilotAuraRadius * this.player.pilotAuraRadius) {
+          this.damagePrey(this.player.pilotAuraDamage);
+        }
       }
     }
 
@@ -2121,6 +2359,15 @@ export class GameEngine {
     pilot.ultTimer = form.ultCooldown;
     const aim = Math.atan2(this.player.y - pilot.y, this.player.x - pilot.x);
 
+    // Swarm adrenal surge triggers on any ult
+    if (this.player.swarmAdrenalSpeedBonus) {
+      this.swarmAdrenalTimer = 3.5;
+    }
+    // Kinetic rend trigger
+    if (this.player.pilotRendBonus) {
+      this.preyRendTimer = this.player.pilotRendDuration || 3.0;
+    }
+
     switch (form.kind) {
       case 'lunge':
         pilot.dashDirX = Math.cos(aim);
@@ -2136,8 +2383,11 @@ export class GameEngine {
         const dx = this.player.x - pilot.x;
         const dy = this.player.y - pilot.y;
         const dist = Math.hypot(dx, dy);
-        if (dist < ULT_SLAM_RADIUS) {
-          this.damagePrey(Math.round(pilot.contactDamage * 1.2));
+        const radiusScale = 1 + (this.player.pilotSlamRadiusScale || 0);
+        const damageScale = 1.2 * (1 + (this.player.pilotSlamDamageScale || 0));
+        const slamR = ULT_SLAM_RADIUS * radiusScale;
+        if (dist < slamR) {
+          this.damagePrey(Math.round(pilot.contactDamage * damageScale));
           if (dist > 1) {
             const margin = this.player.radius + 6;
             this.player.x = Math.max(margin, Math.min(this.width - margin, this.player.x + (dx / dist) * ULT_SLAM_SHOVE));
@@ -2149,7 +2399,7 @@ export class GameEngine {
           x: pilot.x,
           y: pilot.y,
           radius: 12,
-          maxRadius: ULT_SLAM_RADIUS,
+          maxRadius: slamR,
           color: '#fb7185',
           width: 4,
           life: 0,
@@ -2170,13 +2420,15 @@ export class GameEngine {
         pilot.dashTimer = ULT_CHARGE_SECONDS;
         sound.playChargerDash();
         break;
-      case 'brood':
-        for (let i = 0; i < ULT_BROOD_COUNT; i++) {
-          const a = (i / ULT_BROOD_COUNT) * Math.PI * 2;
+      case 'brood': {
+        const broodCount = ULT_BROOD_COUNT + (this.player.pilotBroodExtra || 0);
+        for (let i = 0; i < broodCount; i++) {
+          const a = (i / broodCount) * Math.PI * 2;
           this.createEnemy('speeder', pilot.x + Math.cos(a) * 24, pilot.y + Math.sin(a) * 24);
         }
         sound.playClick(true);
         break;
+      }
       case 'ring':
         for (let i = 0; i < ULT_RING_COUNT; i++) {
           this.firePilotRound(
@@ -2193,13 +2445,17 @@ export class GameEngine {
   private firePilotRound(angle: number, speed: number, damage: number) {
     const pilot = this.pilot;
     if (!pilot) return;
+    let finalDmg = damage;
+    if (this.player.pilotRangeDamageScale) {
+      finalDmg = Math.round(finalDmg * (1 + this.player.pilotRangeDamageScale));
+    }
     this.pilotRounds.push({
       id: this.nextProjId++,
       x: pilot.x,
       y: pilot.y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      damage,
+      damage: finalDmg,
       pierce: 1,
       radius: 5,
       color: '#fb7185',
@@ -2211,25 +2467,109 @@ export class GameEngine {
     });
   }
 
+  /** Accumulates predator evolution energy and triggers upgrade when filled. */
+  public addPredatorEnergy(amount: number) {
+    if (!this.mode().heroPrey) return;
+    this.predatorEnergy += amount;
+    if (this.predatorEnergy >= this.predatorEnergyTarget) {
+      this.predatorEnergy -= this.predatorEnergyTarget;
+      this.predatorLevel++;
+      this.predatorEnergyTarget = Math.round(100 * (1 + (this.predatorLevel - 1) * 0.8));
+      this.triggerScreenShake(6);
+      sound.playUpgrade();
+      this.state = 'levelup';
+      this.callbacks.onLevelUp();
+    }
+  }
+
   /** Damage that lands on the prey from the player. Its shields are card-side and absent here. */
   private damagePrey(amount: number) {
-    this.player.hp -= amount;
-    this.preyDamage += amount;
+    let finalAmount = amount;
+    if (this.preyRendTimer > 0 && this.player.pilotRendBonus) {
+      finalAmount = Math.round(finalAmount * (1 + this.player.pilotRendBonus));
+    }
+    if (this.player.pilotDesperateDamageBonus && this.preyDesperate()) {
+      finalAmount = Math.round(finalAmount * (1 + this.player.pilotDesperateDamageBonus));
+    }
+    if (this.player.swarmPincerCritMultiplier && this.player.swarmPincerCritMultiplier > 1) {
+      const nearCount = swarmNearby(this.enemies, this.player.x, this.player.y, 160).length;
+      if (nearCount >= 3) {
+        finalAmount = Math.round(finalAmount * this.player.swarmPincerCritMultiplier);
+      }
+    }
+
+    this.player.hp -= finalAmount;
+    this.preyDamage += finalAmount;
     this.player.timeSinceLastDamage = 0;
-    this.triggerScreenShake(Math.min(6, 2 + amount / 20));
+    this.triggerScreenShake(Math.min(6, 2 + finalAmount / 20));
     // Always display player damage on the prey — never drop it due to soldier bite spam
-    this.addFloatingText(this.player.x, this.player.y - 20, `-${amount}`, '#f43f5e', true);
+    this.addFloatingText(this.player.x, this.player.y - 20, `-${finalAmount}`, '#f43f5e', true);
     this.spawnImpactSparks(this.player.x, this.player.y, '#f43f5e', 5);
+
+    // Evolution energy from effective damage
+    this.addPredatorEnergy(finalAmount * 0.9);
+
+    // Neurotoxin slow
+    if (this.player.pilotNeuroSlow) {
+      this.preySlowTimer = this.player.pilotNeuroDuration || 2.0;
+    }
+
+    // Leech & ult cooldown
+    if (this.player.pilotLeechRate && this.pilot) {
+      this.pilot.hp = Math.min(
+        this.pilot.maxHp,
+        this.pilot.hp + Math.max(1, Math.round(finalAmount * this.player.pilotLeechRate))
+      );
+    }
+    if (this.player.pilotUltCooldownRefund && this.pilot) {
+      this.pilot.ultTimer = Math.max(0, this.pilot.ultTimer - this.player.pilotUltCooldownRefund);
+    }
+
+    // Bloodlust stacks
+    if (this.player.pilotBloodlustCap && this.player.pilotBloodlustCap > 0) {
+      this.pilotBloodlustStacks = Math.min(this.player.pilotBloodlustCap, this.pilotBloodlustStacks + 1);
+      this.pilotBloodlustTimer = 2.5;
+    }
+
+    // Swarm beacon mark
+    if (this.player.swarmBeaconBonus) {
+      this.preyBeaconTimer = 4.0;
+    }
+
+    // Drop mutation energy crystal
+    if (Math.random() < 0.65 && this.gems.length < GEM_CAP) {
+      this.gems.push({
+        id: this.nextGemId++,
+        x: this.player.x + (Math.random() - 0.5) * 40,
+        y: this.player.y + (Math.random() - 0.5) * 40,
+        vx: (Math.random() - 0.5) * 2,
+        vy: (Math.random() - 0.5) * 2,
+        value: 20,
+        radius: 6,
+        rotation: 0,
+        rotSpeed: 4,
+        color: '#f43f5e',
+        attracted: false,
+      });
+    }
+
     if (this.player.hp <= 0) this.handlePlayerDeath();
   }
 
   /** Damage that lands on you. Phase Stutter's ult makes it pass through. */
   private hitPilot(amount: number) {
     const pilot = this.pilot;
-    if (!pilot || pilot.invulnTimer > 0 || pilot.phaseTimer > 0) return;
-    pilot.hp -= amount;
+    if (!pilot || pilot.invulnTimer > 0 || pilot.phaseTimer > 0 || this.isGodMode()) return;
+    let actualDmg = amount;
+    if (this.player.pilotDamageReductionMax && this.player.pilotDamageReductionMax < 1) {
+      actualDmg = Math.min(
+        actualDmg,
+        Math.max(1, Math.round(pilot.maxHp * this.player.pilotDamageReductionMax))
+      );
+    }
+    pilot.hp -= actualDmg;
     if (this.floatingTexts.length < 20) {
-      this.addFloatingText(pilot.x, pilot.y - 14, `-${amount}`, '#f87171', false);
+      this.addFloatingText(pilot.x, pilot.y - 14, `-${actualDmg}`, '#f87171', false);
     }
     this.triggerScreenShake(2);
     if (pilot.hp <= 0) this.respawnPilot();
@@ -2239,12 +2579,51 @@ export class GameEngine {
   private soldierBitesPrey(e: Enemy) {
     if (!soldierCanBite(e)) return;
     e.contactCooldown = SOLDIER_BITE_COOLDOWN;
-    const bite = soldierBiteDamage(e);
+    let bite = soldierBiteDamage(e);
+
+    if (this.player.swarmBiteDamageScale && this.player.swarmBiteDamageScale > 0) {
+      bite = Math.round(bite * (1 + this.player.swarmBiteDamageScale));
+    }
+    if (this.player.swarmPackDamageBonus && this.player.swarmPackDamageBonus > 0) {
+      const nearCount = swarmNearby(this.enemies, this.player.x, this.player.y, 160).length;
+      const packScale = Math.min(1.0, nearCount * this.player.swarmPackDamageBonus);
+      bite = Math.round(bite * (1 + packScale));
+    }
+
     this.player.hp -= bite;
     this.player.timeSinceLastDamage = 0;
     if (this.floatingTexts.length < 20) {
       this.addFloatingText(this.player.x, this.player.y - 16, `-${bite}`, '#fca5a5', false);
     }
+
+    // Swarm leech link
+    if (this.player.swarmLeechShare && this.pilot) {
+      this.pilot.hp = Math.min(
+        this.pilot.maxHp,
+        this.pilot.hp + Math.max(1, Math.round(bite * this.player.swarmLeechShare))
+      );
+    }
+
+    // Soldier bites also generate energy
+    this.addPredatorEnergy(Math.max(4, Math.round(bite * 0.4)));
+
+    // Chance to drop small energy orb
+    if (Math.random() < 0.25 && this.gems.length < GEM_CAP) {
+      this.gems.push({
+        id: this.nextGemId++,
+        x: this.player.x + (Math.random() - 0.5) * 30,
+        y: this.player.y + (Math.random() - 0.5) * 30,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: (Math.random() - 0.5) * 1.5,
+        value: 12,
+        radius: 5,
+        rotation: 0,
+        rotSpeed: 3,
+        color: '#f43f5e',
+        attracted: false,
+      });
+    }
+
     if (this.player.hp <= 0) this.handlePlayerDeath();
   }
 
@@ -2264,6 +2643,16 @@ export class GameEngine {
       contactScale: mode.contactDamageScale,
       growthScale: this.enemyGrowthScale(),
     });
+    if (this.player.pilotMaxHpScale && this.player.pilotMaxHpScale > 0) {
+      this.pilot.maxHp = Math.round(this.pilot.maxHp * (1 + this.player.pilotMaxHpScale));
+      this.pilot.hp = this.pilot.maxHp;
+    }
+    if (this.player.pilotContactScale && this.player.pilotContactScale > 0) {
+      this.pilot.contactDamage = Math.round(this.pilot.contactDamage * (1 + this.player.pilotContactScale));
+    }
+    if (this.player.pilotExtraInvuln && this.player.pilotExtraInvuln > 0) {
+      this.pilot.invulnTimer = MORPH_INVULN + this.player.pilotExtraInvuln;
+    }
     return this.pilot;
   }
 
@@ -2307,7 +2696,7 @@ export class GameEngine {
     if (this.preyBuffTimer < PREY_BUFF_INTERVAL) return;
     this.preyBuffTimer -= PREY_BUFF_INTERVAL;
 
-    const def = pickPreyUpgrade(poolForMode(this.mode()), this.player, Math.random);
+    const def = pickPreyUpgrade(ALL_UPGRADES, this.player, Math.random);
     if (!def) return; // the whole pool is maxed; nothing left to hand out
 
     const levels = this.player.upgradeLevels;
@@ -2367,7 +2756,7 @@ export class GameEngine {
       heroMaxHp: Math.round(this.player.maxHp),
       desperate: this.preyDesperate(),
       swarmCount: this.enemies.length,
-      swarmCap: mode.maxAlive,
+      swarmCap: mode.maxAlive + (this.player.swarmCapBonus || 0),
       swarmPeak: this.swarmPeak,
       formNameZh: ENEMY_TYPES[pilot.form].nameZh,
       ultNameZh: form.ultNameZh,
@@ -2377,6 +2766,9 @@ export class GameEngine {
       morphs: this.morphs,
       timeLeft: mode.runDurationSec > 0 ? Math.max(0, Math.ceil(mode.runDurationSec - this.gameTime)) : 0,
       damageDealt: Math.round(this.preyDamage),
+      energy: Math.floor(this.predatorEnergy),
+      energyTarget: this.predatorEnergyTarget,
+      monsterLevel: this.predatorLevel,
       respawnSlots: this.respawnSlots.slice(),
       preyUpgrades: this.preyUpgradeViews,
       nextBuffIn: preyBuffCountdown(this.preyBuffTimer),
@@ -2563,6 +2955,1459 @@ export class GameEngine {
       this.spawnImpactSparks(e.x, e.y, '#c084fc', 3);
       if (e.hp <= 0) this.killEnemy(e, i);
     }
+  }
+
+  /**
+   * Gaster Blaster Protocol: Surrounds target in a circle of geometric blasters
+   * and fires sequential devastating laser beams.
+   */
+  public triggerGasterBlasters(targetX?: number, targetY?: number) {
+    let tx = targetX;
+    let ty = targetY;
+
+    if (tx === undefined || ty === undefined) {
+      // Prioritize boss, else highest HP enemy, else nearest enemy
+      const boss = this.enemies.find((e) => e.isBoss);
+      if (boss) {
+        tx = boss.x;
+        ty = boss.y;
+      } else if (this.enemies.length > 0) {
+        let maxHp = -1;
+        let chosen = this.enemies[0];
+        for (const e of this.enemies) {
+          if (e.hp > maxHp) {
+            maxHp = e.hp;
+            chosen = e;
+          }
+        }
+        tx = chosen.x;
+        ty = chosen.y;
+      } else {
+        tx = this.player.x + Math.cos(this.player.angle) * 180;
+        ty = this.player.y + Math.sin(this.player.angle) * 180;
+      }
+    }
+
+    const lvl = this.player.gasterLevel || 1;
+    const count = atLevel(LVL_GASTER_COUNT, lvl);
+    const ring: GasterRing = {
+      id: this.nextGasterRingId++,
+      targetX: tx,
+      targetY: ty,
+      blasters: createBlasterUnits(tx, ty, count),
+      elapsed: 0,
+      totalDuration: gasterTotalDuration(count),
+      damage: gasterBeamDamage(this.player, lvl),
+      hitEnemies: new Set(),
+      completed: false,
+    };
+
+    this.gasterRings.push(ring);
+    this.pushShockwave({
+      id: Math.random(),
+      x: tx,
+      y: ty,
+      radius: 12,
+      maxRadius: GASTER_RADIUS,
+      color: '#38bdf8',
+      width: 2.5,
+      life: 0,
+      maxLife: 0.35,
+    });
+    sound.playGasterCharge();
+
+    // Cross-Skill Synergy [王庭处刑]: Gaster + Babylon summons 8 inward piercing golden swords around the blaster ring
+    if (hasResonanceSynergy(this.player, 'gaster_babylon')) {
+      const swordDmg = babylonDamage(this.player, Math.max(1, this.player.babylonLevel || 1));
+      for (let sIdx = 0; sIdx < GASTER_BABYLON_RING_SWORDS; sIdx++) {
+        const ringAngle = (sIdx * Math.PI * 2) / GASTER_BABYLON_RING_SWORDS;
+        const sx = tx + Math.cos(ringAngle) * GASTER_RADIUS;
+        const sy = ty + Math.sin(ringAngle) * GASTER_RADIUS;
+        const aimInward = ringAngle + Math.PI;
+        this.babylonSwords.push({
+          id: this.nextBabylonSwordId++,
+          x: sx,
+          y: sy,
+          vx: Math.cos(aimInward) * BABYLON_SWORD_SPEED,
+          vy: Math.sin(aimInward) * BABYLON_SWORD_SPEED,
+          angle: aimInward,
+          damage: swordDmg,
+          life: 0,
+          maxLife: 1.6,
+          pierce: BABYLON_SWORD_PIERCE,
+          stuck: false,
+          stuckTimer: 0,
+          detonated: false,
+          hitEnemies: new Set(),
+        });
+      }
+      this.pushShockwave({
+        id: Math.random(),
+        x: tx,
+        y: ty,
+        radius: GASTER_RADIUS,
+        maxRadius: 20,
+        color: '#fbbf24',
+        width: 2.5,
+        life: 0,
+        maxLife: 0.35,
+      });
+      sound.playBabylonGate();
+    }
+  }
+
+  private pushShockwave(sw: Shockwave, cap: number = 32) {
+    if (this.shockwaves.length < cap) {
+      this.shockwaves.push(sw);
+    }
+  }
+
+  private updateGasterBlasters(dt: number) {
+    if (this.player.gasterInterval > 0) {
+      this.player.gasterTimer -= dt;
+      if (this.player.gasterTimer <= 0) {
+        this.player.gasterTimer = this.player.gasterInterval;
+        this.triggerGasterBlasters();
+      }
+    }
+
+    const riftSynergy = hasResonanceSynergy(this.player, 'rift_judgment');
+
+    for (let i = this.gasterRings.length - 1; i >= 0; i--) {
+      const ring = this.gasterRings[i];
+      ring.elapsed += dt;
+
+      for (const b of ring.blasters) {
+        if (ring.elapsed >= b.fireDelay && !b.fired) {
+          b.fired = true;
+          sound.playGasterBeam();
+          this.triggerScreenShake(4);
+
+          // Snapshot ray-cast hit targets first so kills/splits cannot corrupt loop indexing
+          const hits: Enemy[] = [];
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (
+              beamHitsCircle(
+                b.x,
+                b.y,
+                b.aimAngle,
+                GASTER_BEAM_LENGTH,
+                GASTER_BEAM_WIDTH,
+                e.x,
+                e.y,
+                e.radius
+              )
+            ) {
+              hits.push(e);
+            }
+          }
+
+          for (const e of hits) {
+            if (e.hp <= 0) continue;
+            e.hitFlashTimer = 0.08;
+            const underControl = riftSynergy && isEnemyUnderSpatialControl(e, this.meteors);
+            const riftMult = underControl ? RESONANCE_RIFT_BONUS_MULT : 1;
+            const dmg = Math.round(ring.damage * statusDamageMultiplier(e, this.player) * riftMult);
+            this.damageEnemy(e, dmg);
+            this.spawnImpactSparks(e.x, e.y, underControl ? '#c084fc' : '#38bdf8', underControl ? 6 : 4);
+            if (underControl && this.floatingTexts.length < 20) {
+              this.addFloatingText(e.x, e.y - 16, `裂界暴击 -${dmg}`, '#c084fc', true);
+            }
+            if (e.hp <= 0) {
+              const idx = this.enemies.indexOf(e);
+              if (idx >= 0) this.killEnemy(e, idx);
+            }
+          }
+        }
+
+        if (b.fired) {
+          b.fireProgress = Math.min(1, (ring.elapsed - b.fireDelay) / 0.22);
+        }
+      }
+
+      if (ring.elapsed >= ring.totalDuration) {
+        this.pushShockwave({
+          id: Math.random(),
+          x: ring.targetX,
+          y: ring.targetY,
+          radius: 12,
+          maxRadius: 70,
+          color: '#7dd3fc',
+          width: 2.5,
+          life: 0,
+          maxLife: 0.28,
+        });
+        this.gasterRings.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Void Iaijutsu: Dimensional instantaneous dash slash with sheathing hit-stop
+   * and dimensional space collapse.
+   */
+  public triggerVoidIaijutsu(targetAngle?: number) {
+    let angle = targetAngle;
+    if (angle === undefined) {
+      const { enemy } = this.nearestEnemy(this.player.x, this.player.y);
+      if (enemy) {
+        angle = Math.atan2(enemy.y - this.player.y, enemy.x - this.player.x);
+      } else {
+        angle = this.player.angle;
+      }
+    }
+
+    const lvl = this.player.voidIaijutsuLevel || 1;
+    const baseDistance = atLevel(LVL_IAIJUTSU_DISTANCE, lvl);
+    const startX = this.player.x;
+    const startY = this.player.y;
+
+    // Cut through the target and extend beyond
+    const { enemy } = this.nearestEnemy(startX, startY);
+    const targetDist = enemy ? Math.hypot(enemy.x - startX, enemy.y - startY) + 80 : baseDistance;
+    const distance = Math.max(baseDistance, targetDist);
+
+    const dest = calculateIaijutsuDestination(
+      startX,
+      startY,
+      angle,
+      distance,
+      this.width,
+      this.height
+    );
+
+    // A shadow phantom executes the spatial dash-slash without moving the player
+    this.player.angle = angle;
+
+    const slash: IaijutsuSlash = {
+      id: this.nextIaijutsuSlashId++,
+      startX,
+      startY,
+      endX: dest.endX,
+      endY: dest.endY,
+      angle,
+      length: dest.actualDistance,
+      elapsed: 0,
+      damage: iaijutsuDamage(this.player, lvl),
+      stunDuration: atLevel([0.6, 0.8, 1.0], lvl),
+      phase: 'cut',
+      hitEnemies: new Set(),
+      shattered: false,
+    };
+
+    this.iaijutsuSlashes.push(slash);
+    sound.playIaijutsuDash();
+    this.spawnImpactSparks(startX, startY, '#c084fc', 8);
+    this.spawnImpactSparks(dest.endX, dest.endY, '#ffffff', 12);
+  }
+
+  private updateVoidIaijutsu(dt: number) {
+    if (this.player.voidIaijutsuInterval > 0) {
+      this.player.voidIaijutsuTimer -= dt;
+      if (this.player.voidIaijutsuTimer <= 0) {
+        this.player.voidIaijutsuTimer = this.player.voidIaijutsuInterval;
+        if (this.enemies.length > 0) {
+          this.triggerVoidIaijutsu();
+        }
+      }
+    }
+
+    const mirageLink = hasResonanceSynergy(this.player, 'iaijutsu_mirage');
+
+    for (let i = this.iaijutsuSlashes.length - 1; i >= 0; i--) {
+      const s = this.iaijutsuSlashes[i];
+      s.elapsed += dt;
+
+      if (s.elapsed < IAIJUTSU_CUT_DURATION) {
+        s.phase = 'cut';
+      } else if (s.elapsed < IAIJUTSU_CUT_DURATION + IAIJUTSU_SHEATH_PAUSE) {
+        if (s.phase === 'cut') {
+          sound.playIaijutsuSheath();
+        }
+        s.phase = 'sheath';
+      } else if (!s.shattered) {
+        s.shattered = true;
+        s.phase = 'shatter';
+        sound.playSpatialShatter();
+        this.triggerScreenShake(7);
+
+        // Snapshot corridor enemies first for safe iteration
+        const cutTargets: Enemy[] = [];
+        for (let k = 0; k < this.enemies.length; k++) {
+          const e = this.enemies[k];
+          if (cutHitsEnemy(s.startX, s.startY, s.endX, s.endY, e.x, e.y, e.radius, IAIJUTSU_CUT_WIDTH)) {
+            cutTargets.push(e);
+          }
+        }
+
+        const bloomCoords: { x: number; y: number }[] = [];
+        for (const e of cutTargets) {
+          if (e.hp <= 0) continue;
+          e.hitFlashTimer = 0.12;
+          e.stunTimer = Math.max(e.stunTimer ?? 0, s.stunDuration);
+          this.damageEnemy(e, Math.round(s.damage * statusDamageMultiplier(e, this.player)));
+          this.spawnImpactSparks(e.x, e.y, '#e879f9', 7);
+          bloomCoords.push({ x: e.x, y: e.y });
+          if (e.hp <= 0) {
+            const idx = this.enemies.indexOf(e);
+            if (idx >= 0) this.killEnemy(e, idx);
+          }
+        }
+
+        // Cross-Skill Synergy [断空引华]: Iaijutsu shatter detonates Mirage Lotus Blooms along cut targets
+        if (mirageLink && bloomCoords.length > 0) {
+          const synDmg = Math.round(
+            mirageDamage(this.player, Math.max(1, this.player.mirageLevel || 1)) * 0.55
+          );
+          for (const pos of bloomCoords) {
+            if (!canSpawnMirageBloom(this.mirageBlooms, pos.x, pos.y)) continue;
+            this.mirageBlooms.push({
+              id: this.nextMirageBloomId++,
+              x: pos.x,
+              y: pos.y,
+              elapsed: 0,
+              duration: MIRAGE_BLOOM_DURATION,
+            });
+            this.pushShockwave({
+              id: Math.random(),
+              x: pos.x,
+              y: pos.y,
+              radius: 8,
+              maxRadius: MIRAGE_BLOOM_RADIUS,
+              color: '#f472b6',
+              width: 2.5,
+              life: 0,
+              maxLife: 0.3,
+            });
+            const splashTargets: Enemy[] = [];
+            for (let m = 0; m < this.enemies.length; m++) {
+              const other = this.enemies[m];
+              if (Math.hypot(other.x - pos.x, other.y - pos.y) <= MIRAGE_BLOOM_RADIUS + other.radius) {
+                splashTargets.push(other);
+              }
+            }
+            for (const other of splashTargets) {
+              if (other.hp <= 0) continue;
+              other.hitFlashTimer = 0.1;
+              this.damageEnemy(other, Math.round(synDmg * statusDamageMultiplier(other, this.player)));
+              if (other.hp <= 0) {
+                const idx = this.enemies.indexOf(other);
+                if (idx >= 0) this.killEnemy(other, idx);
+              }
+            }
+          }
+        }
+      }
+
+      if (s.elapsed >= IAIJUTSU_CUT_DURATION + IAIJUTSU_SHEATH_PAUSE + IAIJUTSU_SHATTER_DURATION) {
+        this.iaijutsuSlashes.splice(i, 1);
+      }
+    }
+  }
+
+  // Testing Sandbox methods for Super-Weapons
+  public testEquipGasterBlasters() {
+    const nextLvl = Math.min(3, (this.player.gasterLevel || 0) + 1);
+    this.player.gasterLevel = nextLvl;
+    this.player.gasterInterval = atLevel(LVL_GASTER_INTERVAL, nextLvl);
+    this.player.gasterDamageScale = atLevel(LVL_GASTER_DAMAGE_SCALE, nextLvl);
+    this.player.gasterTimer = this.player.gasterInterval;
+    this.triggerGasterBlasters();
+  }
+
+  public testTriggerGasterBlasters() {
+    this.triggerGasterBlasters();
+  }
+
+  public testEquipVoidIaijutsu() {
+    const nextLvl = Math.min(3, (this.player.voidIaijutsuLevel || 0) + 1);
+    this.player.voidIaijutsuLevel = nextLvl;
+    this.player.voidIaijutsuInterval = atLevel(LVL_IAIJUTSU_INTERVAL, nextLvl);
+    this.player.voidIaijutsuDamageScale = atLevel(LVL_IAIJUTSU_DAMAGE_SCALE, nextLvl);
+    this.player.voidIaijutsuTimer = this.player.voidIaijutsuInterval;
+    this.triggerVoidIaijutsu();
+  }
+
+  public testTriggerVoidIaijutsu() {
+    this.triggerVoidIaijutsu();
+  }
+
+  /**
+   * Gate of Babylon: Sovereign gold ripples summon ancient geometric swords
+   */
+  public triggerGateOfBabylon(targetX?: number, targetY?: number) {
+    let tx = targetX;
+    let ty = targetY;
+    if (tx === undefined || ty === undefined) {
+      const { enemy } = this.nearestEnemy(this.player.x, this.player.y);
+      if (enemy) {
+        tx = enemy.x;
+        ty = enemy.y;
+      } else {
+        tx = this.player.x + Math.cos(this.player.angle) * 200;
+        ty = this.player.y + Math.sin(this.player.angle) * 200;
+      }
+    }
+
+    const lvl = this.player.babylonLevel || 1;
+    const count = atLevel(LVL_BABYLON_COUNT, lvl);
+    const angle = Math.atan2(ty - this.player.y, tx - this.player.x);
+
+    const gate: BabylonGate = {
+      id: this.nextBabylonGateId++,
+      originX: this.player.x,
+      originY: this.player.y,
+      angle,
+      totalSwords: count,
+      swordsSpawned: 0,
+      spawnTimer: 0,
+      spawnInterval: 0.05,
+      elapsed: 0,
+      duration: 1.6,
+      active: true,
+    };
+    this.babylonGates.push(gate);
+    sound.playBabylonGate();
+  }
+
+  private updateGateOfBabylon(dt: number) {
+    if (this.player.babylonInterval > 0) {
+      this.player.babylonTimer -= dt;
+      if (this.player.babylonTimer <= 0) {
+        this.player.babylonTimer = this.player.babylonInterval;
+        if (this.enemies.length > 0) {
+          this.triggerGateOfBabylon();
+        }
+      }
+    }
+
+    const lvl = this.player.babylonLevel || 1;
+
+    // Update gates
+    for (let i = this.babylonGates.length - 1; i >= 0; i--) {
+      const g = this.babylonGates[i];
+      g.elapsed += dt;
+
+      while (g.swordsSpawned < g.totalSwords && g.elapsed >= g.swordsSpawned * g.spawnInterval) {
+        const slot = calculateGateSlotPosition(g.originX, g.originY, g.angle, g.swordsSpawned, g.totalSwords);
+        this.babylonSwords.push({
+          id: this.nextBabylonSwordId++,
+          x: slot.x,
+          y: slot.y,
+          vx: Math.cos(g.angle) * BABYLON_SWORD_SPEED,
+          vy: Math.sin(g.angle) * BABYLON_SWORD_SPEED,
+          angle: g.angle,
+          damage: babylonDamage(this.player, lvl),
+          life: 0,
+          maxLife: 2.0,
+          pierce: BABYLON_SWORD_PIERCE,
+          stuck: false,
+          stuckTimer: 0,
+          detonated: false,
+          hitEnemies: new Set(),
+        });
+        g.swordsSpawned++;
+        sound.playBabylonSword();
+      }
+
+      if (g.elapsed >= g.duration) {
+        g.active = false;
+        this.babylonGates.splice(i, 1);
+      }
+    }
+
+    // Update swords
+    for (let i = this.babylonSwords.length - 1; i >= 0; i--) {
+      const s = this.babylonSwords[i];
+      if (s.stuck) {
+        s.stuckTimer += dt;
+        if (s.stuckTimer >= 0.28 && !s.detonated) {
+          s.detonated = true;
+          const burstDmg = Math.round(s.damage * BABYLON_BURST_DAMAGE_SHARE);
+          const burstTargets: Enemy[] = [];
+          for (let m = 0; m < this.enemies.length; m++) {
+            const foe = this.enemies[m];
+            const d2 = (foe.x - s.x) ** 2 + (foe.y - s.y) ** 2;
+            if (d2 <= (BABYLON_BURST_RADIUS + foe.radius) ** 2) {
+              burstTargets.push(foe);
+            }
+          }
+          for (const foe of burstTargets) {
+            if (foe.hp <= 0) continue;
+            foe.hitFlashTimer = 0.1;
+            this.damageEnemy(foe, Math.round(burstDmg * statusDamageMultiplier(foe, this.player)));
+            if (foe.hp <= 0) {
+              const idx = this.enemies.indexOf(foe);
+              if (idx >= 0) this.killEnemy(foe, idx);
+            }
+          }
+          this.pushShockwave({
+            id: Math.random(),
+            x: s.x,
+            y: s.y,
+            radius: 8,
+            maxRadius: BABYLON_BURST_RADIUS,
+            color: '#f59e0b',
+            width: 2.5,
+            life: 0,
+            maxLife: 0.22,
+          });
+        }
+        if (s.stuckTimer >= 0.3) {
+          this.babylonSwords.splice(i, 1);
+        }
+        continue;
+      }
+
+      s.x += s.vx;
+      s.y += s.vy;
+      s.life += dt;
+
+      // Snapshot pierce hits safely
+      const hitTargets: Enemy[] = [];
+      for (let k = 0; k < this.enemies.length; k++) {
+        const e = this.enemies[k];
+        if (!s.hitEnemies.has(e.id) && swordHitsEnemy(s.x, s.y, e.x, e.y, e.radius)) {
+          hitTargets.push(e);
+        }
+      }
+
+      for (const e of hitTargets) {
+        if (e.hp <= 0) continue;
+        s.hitEnemies.add(e.id);
+        s.pierce--;
+        e.hitFlashTimer = 0.12;
+        this.damageEnemy(e, Math.round(s.damage * statusDamageMultiplier(e, this.player)));
+        this.spawnImpactSparks(s.x, s.y, '#fbbf24', 8);
+        if (e.hp <= 0) {
+          const idx = this.enemies.indexOf(e);
+          if (idx >= 0) this.killEnemy(e, idx);
+        }
+
+        if (s.pierce <= 0) {
+          s.stuck = true;
+          s.stuckTimer = 0;
+          s.vx = 0;
+          s.vy = 0;
+          break;
+        }
+      }
+
+      if (
+        !s.stuck &&
+        (s.life >= s.maxLife ||
+          s.x < -100 ||
+          s.x > this.width + 100 ||
+          s.y < -100 ||
+          s.y > this.height + 100)
+      ) {
+        this.babylonSwords.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Singularity Meteor: Gravitational pull vortex and celestial planet-buster impact
+   */
+  public triggerSingularityMeteor(targetX?: number, targetY?: number) {
+    let tx = targetX;
+    let ty = targetY;
+    if (tx === undefined || ty === undefined) {
+      const cluster = findDensestEnemyCluster(this.enemies);
+      if (cluster) {
+        tx = cluster.targetX;
+        ty = cluster.targetY;
+      } else {
+        tx = this.player.x;
+        ty = this.player.y;
+      }
+    }
+
+    const lvl = this.player.meteorLevel || 1;
+    const meteor: SingularityMeteor = {
+      id: this.nextMeteorId++,
+      targetX: tx,
+      targetY: ty,
+      currentX: tx,
+      currentY: -100,
+      altitude: 1,
+      elapsed: 0,
+      duration: METEOR_FALL_DURATION,
+      damage: meteorDamage(this.player, lvl),
+      pullRadius: atLevel(LVL_METEOR_PULL_RADIUS, lvl),
+      impacted: false,
+      impactTimer: 0,
+      aftershockTriggered: false,
+      tickTimer: 0,
+    };
+    this.meteors.push(meteor);
+  }
+
+  private updateSingularityMeteors(dt: number) {
+    if (this.player.meteorInterval > 0) {
+      this.player.meteorTimer -= dt;
+      if (this.player.meteorTimer <= 0) {
+        this.player.meteorTimer = this.player.meteorInterval;
+        if (this.enemies.length > 0) {
+          this.triggerSingularityMeteor();
+        }
+      }
+    }
+
+    const meteorIonSynergy = hasResonanceSynergy(this.player, 'meteor_ion');
+
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      const m = this.meteors[i];
+      m.elapsed += dt;
+
+      if (!m.impacted) {
+        m.altitude = Math.max(0, 1 - m.elapsed / m.duration);
+        m.currentX = m.targetX;
+        m.currentY = m.targetY - 500 * m.altitude;
+
+        // Gravitational singularity pull on enemies
+        for (const e of this.enemies) {
+          const pull = calculateMeteorPull(m.targetX, m.targetY, e.x, e.y, m.pullRadius, 240 * dt);
+          e.x += pull.pullX;
+          e.y += pull.pullY;
+        }
+
+        if (m.altitude <= 0) {
+          m.impacted = true;
+          m.impactTimer = METEOR_CRATER_DURATION;
+          m.aftershockTriggered = false;
+          m.tickTimer = 0;
+          sound.playMeteorCrash();
+          this.triggerScreenShake(14);
+
+          // Massive primary blast impact (snapshot targets safely)
+          const impactTargets: Enemy[] = [];
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (enemyInMeteorBlast(m.targetX, m.targetY, e.x, e.y, e.radius, METEOR_EXPLOSION_RADIUS)) {
+              impactTargets.push(e);
+            }
+          }
+          for (const e of impactTargets) {
+            if (e.hp <= 0) continue;
+            e.hitFlashTimer = 0.22;
+            e.stunTimer = Math.max(e.stunTimer ?? 0, 1.1);
+            this.damageEnemy(e, Math.round(m.damage * statusDamageMultiplier(e, this.player)));
+            this.spawnImpactSparks(e.x, e.y, '#f97316', 8);
+            if (e.hp <= 0) {
+              const idx = this.enemies.indexOf(e);
+              if (idx >= 0) this.killEnemy(e, idx);
+            }
+          }
+
+          this.pushShockwave({
+            id: Math.random(),
+            x: m.targetX,
+            y: m.targetY,
+            radius: 20,
+            maxRadius: METEOR_EXPLOSION_RADIUS * 1.05,
+            color: '#ea580c',
+            width: 5,
+            life: 0,
+            maxLife: 0.4,
+          });
+          this.pushShockwave({
+            id: Math.random(),
+            x: m.targetX,
+            y: m.targetY,
+            radius: 10,
+            maxRadius: METEOR_EXPLOSION_RADIUS * 0.75,
+            color: '#c084fc',
+            width: 4,
+            life: 0,
+            maxLife: 0.3,
+          });
+
+          // Cross-Skill Synergy [星陨聚变]: Meteor impact calls down a Divine Ion Strike at the crater center
+          if (meteorIonSynergy) {
+            const ionLvl = Math.max(1, this.player.ionLevel || 1);
+            this.ionStrikes.push({
+              id: this.nextIonStrikeId++,
+              targetX: m.targetX,
+              targetY: m.targetY,
+              beamWidth: atLevel(LVL_ION_WIDTH, ionLvl),
+              elapsed: Math.max(0, ION_TARGETING_TIME - 0.12),
+              damage: ionDamage(this.player, ionLvl),
+              phase: 'targeting',
+              groundTimer: ION_GROUND_DURATION,
+              groundTickTimer: 0,
+              hitEnemies: new Set(),
+            });
+          }
+        }
+      } else {
+        m.impactTimer -= dt;
+        const craterElapsed = METEOR_CRATER_DURATION - m.impactTimer;
+
+        // 1. Residual gravity pull & slow field within the scorched crater
+        for (const e of this.enemies) {
+          if (enemyInMeteorBlast(m.targetX, m.targetY, e.x, e.y, e.radius, METEOR_EXPLOSION_RADIUS)) {
+            const pull = calculateMeteorPull(m.targetX, m.targetY, e.x, e.y, METEOR_EXPLOSION_RADIUS, 120 * dt);
+            e.x += pull.pullX;
+            e.y += pull.pullY;
+            e.frozenTimer = Math.max(e.frozenTimer ?? 0, 0.4);
+          }
+        }
+
+        // 2. Periodic gravitational tremor ticks in the crater
+        m.tickTimer += dt;
+        while (m.tickTimer >= METEOR_CRATER_TICK_RATE) {
+          m.tickTimer -= METEOR_CRATER_TICK_RATE;
+          const tickDmg = Math.max(1, Math.round(m.damage * METEOR_CRATER_TICK_DAMAGE_SHARE));
+          const tickTargets: Enemy[] = [];
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (enemyInMeteorBlast(m.targetX, m.targetY, e.x, e.y, e.radius, METEOR_EXPLOSION_RADIUS)) {
+              tickTargets.push(e);
+            }
+          }
+          for (const e of tickTargets) {
+            if (e.hp <= 0) continue;
+            e.hitFlashTimer = 0.08;
+            this.damageEnemy(e, Math.round(tickDmg * statusDamageMultiplier(e, this.player)));
+            this.spawnImpactSparks(e.x, e.y, '#a855f7', 3);
+            if (e.hp <= 0) {
+              const idx = this.enemies.indexOf(e);
+              if (idx >= 0) this.killEnemy(e, idx);
+            }
+          }
+        }
+
+        // 3. Delayed Secondary Singularity Collapse Explosion!
+        if (!m.aftershockTriggered && craterElapsed >= METEOR_AFTERSHOCK_DELAY) {
+          m.aftershockTriggered = true;
+          sound.playSpatialShatter();
+          sound.playMeteorCrash();
+          this.triggerScreenShake(11);
+
+          const aftershockDmg = Math.max(1, Math.round(m.damage * METEOR_AFTERSHOCK_DAMAGE_SHARE));
+          const aftershockTargets: Enemy[] = [];
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (enemyInMeteorBlast(m.targetX, m.targetY, e.x, e.y, e.radius, METEOR_EXPLOSION_RADIUS * 1.05)) {
+              aftershockTargets.push(e);
+            }
+          }
+          for (const e of aftershockTargets) {
+            if (e.hp <= 0) continue;
+            e.hitFlashTimer = 0.2;
+            e.stunTimer = Math.max(e.stunTimer ?? 0, 0.85);
+            this.damageEnemy(e, Math.round(aftershockDmg * statusDamageMultiplier(e, this.player)));
+            this.spawnImpactSparks(e.x, e.y, '#c084fc', 6);
+            if (e.hp <= 0) {
+              const idx = this.enemies.indexOf(e);
+              if (idx >= 0) this.killEnemy(e, idx);
+            }
+          }
+
+          this.pushShockwave({
+            id: Math.random(),
+            x: m.targetX,
+            y: m.targetY,
+            radius: 16,
+            maxRadius: METEOR_EXPLOSION_RADIUS * 1.1,
+            color: '#c084fc',
+            width: 5,
+            life: 0,
+            maxLife: 0.38,
+          });
+          this.pushShockwave({
+            id: Math.random(),
+            x: m.targetX,
+            y: m.targetY,
+            radius: 8,
+            maxRadius: METEOR_EXPLOSION_RADIUS * 0.85,
+            color: '#ffffff',
+            width: 3,
+            life: 0,
+            maxLife: 0.28,
+          });
+        }
+
+        if (m.impactTimer <= 0) {
+          this.meteors.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  /**
+   * Divine Ion Beam: Orbital strike laser pillar and persistent burning ground
+   */
+  public triggerDivineIonStrikes(targetX?: number, targetY?: number) {
+    let tx = targetX;
+    let ty = targetY;
+    if (tx === undefined || ty === undefined) {
+      const { enemy } = this.nearestEnemy(this.player.x, this.player.y);
+      if (enemy) {
+        tx = enemy.x;
+        ty = enemy.y;
+      } else {
+        tx = this.player.x;
+        ty = this.player.y;
+      }
+    }
+
+    const lvl = this.player.ionLevel || 1;
+    this.ionStrikes.push({
+      id: this.nextIonStrikeId++,
+      targetX: tx,
+      targetY: ty,
+      beamWidth: atLevel(LVL_ION_WIDTH, lvl),
+      elapsed: 0,
+      damage: ionDamage(this.player, lvl),
+      phase: 'targeting',
+      groundTimer: ION_GROUND_DURATION,
+      groundTickTimer: 0,
+      hitEnemies: new Set(),
+    });
+  }
+
+  private updateDivineIonStrikes(dt: number) {
+    if (this.player.ionInterval > 0) {
+      this.player.ionTimer -= dt;
+      if (this.player.ionTimer <= 0) {
+        this.player.ionTimer = this.player.ionInterval;
+        if (this.enemies.length > 0) {
+          this.triggerDivineIonStrikes();
+        }
+      }
+    }
+
+    const riftSynergy = hasResonanceSynergy(this.player, 'rift_judgment');
+
+    for (let i = this.ionStrikes.length - 1; i >= 0; i--) {
+      const s = this.ionStrikes[i];
+      s.elapsed += dt;
+
+      if (s.phase === 'targeting') {
+        if (s.elapsed >= ION_TARGETING_TIME) {
+          s.phase = 'pillar';
+          sound.playIonBeam();
+          this.triggerScreenShake(9);
+
+          // Celestial vertical pillar blast (index-safe target snapshot)
+          const pillarTargets: Enemy[] = [];
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (enemyInIonPillar(s.targetX, s.beamWidth, e.x, e.radius)) {
+              pillarTargets.push(e);
+            }
+          }
+          for (const e of pillarTargets) {
+            if (e.hp <= 0) continue;
+            e.hitFlashTimer = 0.2;
+            const underControl = riftSynergy && isEnemyUnderSpatialControl(e, this.meteors);
+            const riftMult = underControl ? RESONANCE_RIFT_BONUS_MULT : 1;
+            const dmg = Math.round(s.damage * statusDamageMultiplier(e, this.player) * riftMult);
+            this.damageEnemy(e, dmg);
+            this.spawnImpactSparks(e.x, e.y, underControl ? '#c084fc' : '#38bdf8', underControl ? 9 : 6);
+            if (underControl && this.floatingTexts.length < 20) {
+              this.addFloatingText(e.x, e.y - 16, `裂界暴击 -${dmg}`, '#c084fc', true);
+            }
+            s.hitEnemies.add(e.id);
+            if (e.hp <= 0) {
+              const idx = this.enemies.indexOf(e);
+              if (idx >= 0) this.killEnemy(e, idx);
+            }
+          }
+        }
+      } else if (s.phase === 'pillar') {
+        if (s.elapsed >= ION_TARGETING_TIME + ION_PILLAR_DURATION) {
+          s.phase = 'ground';
+        }
+      } else if (s.phase === 'ground') {
+        s.groundTimer -= dt;
+        s.groundTickTimer += dt;
+        while (s.groundTickTimer >= ION_GROUND_TICK_RATE) {
+          s.groundTickTimer -= ION_GROUND_TICK_RATE;
+          const tickDmg = Math.round(s.damage * ION_GROUND_DAMAGE_SHARE);
+          const groundTargets: Enemy[] = [];
+          for (let k = 0; k < this.enemies.length; k++) {
+            const e = this.enemies[k];
+            if (enemyInIonGround(s.targetX, s.targetY, ION_GROUND_RADIUS, e.x, e.y, e.radius)) {
+              groundTargets.push(e);
+            }
+          }
+          for (const e of groundTargets) {
+            if (e.hp <= 0) continue;
+            e.hitFlashTimer = 0.06;
+            this.damageEnemy(e, Math.round(tickDmg * statusDamageMultiplier(e, this.player)));
+            if (e.hp <= 0) {
+              const idx = this.enemies.indexOf(e);
+              if (idx >= 0) this.killEnemy(e, idx);
+            }
+          }
+        }
+
+        if (s.groundTimer <= 0) {
+          s.phase = 'done';
+          this.ionStrikes.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  /**
+   * Prism Aegis: Sanctuary Repulsion Burst when reflection quota is achieved
+   */
+  public triggerPrismAegisBurst() {
+    const lvl = this.player.aegisLevel || 1;
+    const burstRadius = this.player.aegisRadius * 1.5;
+    const dmg = aegisBurstDamage(this.player, lvl);
+
+    this.triggerScreenShake(6);
+    sound.playExplosion();
+
+    this.pushShockwave({
+      id: Math.random(),
+      x: this.player.x,
+      y: this.player.y,
+      radius: 20,
+      maxRadius: burstRadius,
+      color: '#38bdf8',
+      width: 4,
+      life: 0,
+      maxLife: 0.3,
+    });
+    this.spawnImpactSparks(this.player.x, this.player.y, '#06b6d4', 16);
+
+    const burstTargets: Enemy[] = [];
+    for (let k = 0; k < this.enemies.length; k++) {
+      const e = this.enemies[k];
+      const d = Math.hypot(e.x - this.player.x, e.y - this.player.y);
+      if (d <= burstRadius + e.radius) {
+        burstTargets.push(e);
+      }
+    }
+
+    for (const e of burstTargets) {
+      if (e.hp <= 0) continue;
+      // Knockback away from player
+      const ang = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+      e.x += Math.cos(ang) * 45;
+      e.y += Math.sin(ang) * 45;
+      e.hitFlashTimer = 0.15;
+      this.damageEnemy(e, Math.round(dmg * statusDamageMultiplier(e, this.player)));
+      if (e.hp <= 0) {
+        const idx = this.enemies.indexOf(e);
+        if (idx >= 0) this.killEnemy(e, idx);
+      }
+    }
+
+    // Cross-Skill Synergy [圣域万象]: Aegis burst fires 360° piercing Babylon Swords (or Cryo-Sakura needles)
+    if (hasResonanceSynergy(this.player, 'aegis_arsenal')) {
+      if ((this.player.babylonLevel || 0) > 0) {
+        const swordDmg = babylonDamage(this.player, this.player.babylonLevel);
+        for (let bIdx = 0; bIdx < AEGIS_ARSENAL_RING_COUNT; bIdx++) {
+          const ang = (bIdx * Math.PI * 2) / AEGIS_ARSENAL_RING_COUNT;
+          this.babylonSwords.push({
+            id: this.nextBabylonSwordId++,
+            x: this.player.x + Math.cos(ang) * 24,
+            y: this.player.y + Math.sin(ang) * 24,
+            vx: Math.cos(ang) * BABYLON_SWORD_SPEED,
+            vy: Math.sin(ang) * BABYLON_SWORD_SPEED,
+            angle: ang,
+            damage: swordDmg,
+            life: 0,
+            maxLife: 1.8,
+            pierce: BABYLON_SWORD_PIERCE,
+            stuck: false,
+            stuckTimer: 0,
+            detonated: false,
+            hitEnemies: new Set(),
+          });
+        }
+        sound.playBabylonGate();
+      } else {
+        const needleDmg = mirageDamage(this.player, Math.max(1, this.player.mirageLevel || 1));
+        for (let bIdx = 0; bIdx < AEGIS_ARSENAL_RING_COUNT; bIdx++) {
+          const ang = (bIdx * Math.PI * 2) / AEGIS_ARSENAL_RING_COUNT;
+          this.projectiles.push({
+            id: this.nextProjId++,
+            x: this.player.x + Math.cos(ang) * 24,
+            y: this.player.y + Math.sin(ang) * 24,
+            vx: Math.cos(ang) * 14,
+            vy: Math.sin(ang) * 14,
+            damage: needleDmg,
+            pierce: 4,
+            radius: 7,
+            color: '#f472b6',
+            trail: [],
+            isCrit: true,
+            life: 0,
+            maxLife: 1.4,
+            hitEnemyIds: new Set(),
+          });
+        }
+        sound.playMirageLaunch();
+      }
+    }
+  }
+
+  private updatePrismAegis(dt: number) {
+    if (this.player.aegisLevel <= 0) return;
+
+    // Sustained close-range perimeter plasma pulse keeps melee swarms at bay between reflection bursts
+    this.aegisPulseTimer += dt;
+    if (this.aegisPulseTimer >= AEGIS_PULSE_INTERVAL) {
+      this.aegisPulseTimer -= AEGIS_PULSE_INTERVAL;
+      const lvl = this.player.aegisLevel;
+      const pulseRadius = this.player.aegisRadius;
+      const pulseDmg = Math.max(1, Math.round(aegisBurstDamage(this.player, lvl) * AEGIS_PULSE_DAMAGE_SHARE));
+
+      const pulseTargets: Enemy[] = [];
+      for (let k = 0; k < this.enemies.length; k++) {
+        const e = this.enemies[k];
+        if (Math.hypot(e.x - this.player.x, e.y - this.player.y) <= pulseRadius + e.radius) {
+          pulseTargets.push(e);
+        }
+      }
+
+      if (pulseTargets.length > 0) {
+        this.pushShockwave(
+          {
+            id: Math.random(),
+            x: this.player.x,
+            y: this.player.y,
+            radius: Math.max(20, pulseRadius * 0.65),
+            maxRadius: pulseRadius,
+            color: '#22d3ee',
+            width: 2,
+            life: 0,
+            maxLife: 0.25,
+          },
+          24
+        );
+      }
+
+      for (const e of pulseTargets) {
+        if (e.hp <= 0) continue;
+        const ang = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+        e.x += Math.cos(ang) * 16;
+        e.y += Math.sin(ang) * 16;
+        e.hitFlashTimer = 0.08;
+        this.damageEnemy(e, Math.round(pulseDmg * statusDamageMultiplier(e, this.player)));
+        if (e.hp <= 0) {
+          const idx = this.enemies.indexOf(e);
+          if (idx >= 0) this.killEnemy(e, idx);
+        }
+      }
+    }
+  }
+
+  /**
+   * Mirage Blades: Rapid sequential outbound piercing volley -> offscreen wait ->
+   * simultaneous convergence sweep through the player and off the opposite edge.
+   */
+  public triggerMirageBlades() {
+    const orbiters = this.mirageBlades
+      .filter((b) => b.state === 'orbit')
+      .sort((a, b) => a.orbitAngle - b.orbitAngle);
+    if (orbiters.length === 0) return;
+
+    for (let idx = 0; idx < orbiters.length; idx++) {
+      const b = orbiters[idx];
+      b.state = 'queued';
+      b.launchDelay = idx * MIRAGE_OUTBOUND_STAGGER;
+      b.life = 0;
+      b.hitEnemies.clear();
+    }
+    sound.playMirageLaunch();
+  }
+
+  private applyMirageBladePierceHits(b: MirageBlade) {
+    // 1. Snapshot all newly pierced enemies BEFORE mutating/killing any enemy in this.enemies!
+    const primaryHits: Enemy[] = [];
+    for (let k = 0; k < this.enemies.length; k++) {
+      const e = this.enemies[k];
+      if (b.hitEnemies.has(e.id)) continue;
+      if (Math.hypot(e.x - b.x, e.y - b.y) <= e.radius + 14) {
+        primaryHits.push(e);
+      }
+    }
+
+    if (primaryHits.length === 0) return;
+
+    const bloomCenters: { x: number; y: number }[] = [];
+    for (const e of primaryHits) {
+      b.hitEnemies.add(e.id);
+      if (e.hp <= 0) continue;
+      e.hitFlashTimer = 0.14;
+      this.damageEnemy(e, Math.round(b.damage * statusDamageMultiplier(e, this.player)));
+      this.spawnImpactSparks(e.x, e.y, '#ec4899', 4);
+      this.spawnImpactSparks(e.x, e.y, '#38bdf8', 3);
+
+      const hx = e.x;
+      const hy = e.y;
+      if (e.hp <= 0) {
+        const idx = this.enemies.indexOf(e);
+        if (idx >= 0) this.killEnemy(e, idx);
+      }
+
+      // Deduplicated & capped Lotus Bloom so dense swarms never overload frames or corrupt loop indices
+      if (canSpawnMirageBloom(this.mirageBlooms, hx, hy)) {
+        this.mirageBlooms.push({
+          id: this.nextMirageBloomId++,
+          x: hx,
+          y: hy,
+          elapsed: 0,
+          duration: MIRAGE_BLOOM_DURATION,
+        });
+        this.pushShockwave(
+          {
+            id: Math.random(),
+            x: hx,
+            y: hy,
+            radius: 6,
+            maxRadius: MIRAGE_BLOOM_RADIUS,
+            color: '#38bdf8',
+            width: 2,
+            life: 0,
+            maxLife: 0.3,
+          },
+          28
+        );
+        bloomCenters.push({ x: hx, y: hy });
+      }
+    }
+
+    // 2. Apply Lotus Bloom splash safely per spawned bloom using snapshotted targets
+    if (bloomCenters.length > 0) {
+      const bloomDmg = Math.round(b.damage * 0.45);
+      for (const center of bloomCenters) {
+        const splashTargets: Enemy[] = [];
+        for (let m = 0; m < this.enemies.length; m++) {
+          const other = this.enemies[m];
+          if (Math.hypot(other.x - center.x, other.y - center.y) <= MIRAGE_BLOOM_RADIUS + other.radius) {
+            splashTargets.push(other);
+          }
+        }
+        for (const other of splashTargets) {
+          if (other.hp <= 0) continue;
+          other.hitFlashTimer = 0.08;
+          this.damageEnemy(other, Math.round(bloomDmg * statusDamageMultiplier(other, this.player)));
+          if (other.hp <= 0) {
+            const idx = this.enemies.indexOf(other);
+            if (idx >= 0) this.killEnemy(other, idx);
+          }
+        }
+      }
+    }
+  }
+
+  private updateMirageBlades(dt: number) {
+    // Advance and expire active Lotus Bloom bursts independently of blades
+    for (let i = this.mirageBlooms.length - 1; i >= 0; i--) {
+      const bloom = this.mirageBlooms[i];
+      bloom.elapsed += dt;
+      if (bloom.elapsed >= bloom.duration) {
+        this.mirageBlooms.splice(i, 1);
+      }
+    }
+
+    // Advance per-enemy contact shred cooldowns for orbiting blades
+    for (const [eid, cd] of this.mirageOrbitHitCooldowns) {
+      const rem = cd - dt;
+      if (rem <= 0) {
+        this.mirageOrbitHitCooldowns.delete(eid);
+      } else {
+        this.mirageOrbitHitCooldowns.set(eid, rem);
+      }
+    }
+
+    if (this.player.mirageLevel <= 0) {
+      this.mirageBlades = [];
+      return;
+    }
+
+    const lvl = this.player.mirageLevel;
+    const desiredCount = atLevel(LVL_MIRAGE_COUNT, lvl);
+    const hasActiveSalvo = this.mirageBlades.some(
+      (b) => b.state !== 'orbit' && b.state !== 'dead'
+    );
+    const orbitBlades = this.mirageBlades.filter((b) => b.state === 'orbit');
+
+    // Only replenish the orbiting halo once the previous salvo has completely ended
+    if (!hasActiveSalvo && orbitBlades.length < desiredCount) {
+      const baseAngle = this.pulseAnimTime * MIRAGE_ORBIT_SPEED;
+      const needed = desiredCount - orbitBlades.length;
+      for (let idx = 0; idx < needed; idx++) {
+        const slotIdx = orbitBlades.length + idx;
+        const angle = baseAngle + (slotIdx * (Math.PI * 2)) / desiredCount;
+        const pos = calculateBladeOrbitPos(this.player.x, this.player.y, angle, MIRAGE_ORBIT_RADIUS);
+        this.mirageBlades.push({
+          id: this.nextMirageBladeId++,
+          orbitAngle: angle,
+          state: 'orbit',
+          launchDelay: 0,
+          x: pos.x,
+          y: pos.y,
+          vx: 0,
+          vy: 0,
+          angle: angle + Math.PI / 2,
+          targetX: 0,
+          targetY: 0,
+          targetEnemyId: null,
+          damage: mirageDamage(this.player, lvl),
+          life: 0,
+          hitEnemies: new Set(),
+        });
+      }
+    }
+
+    if (this.player.mirageInterval > 0 && !hasActiveSalvo) {
+      this.player.mirageTimer -= dt;
+      if (this.player.mirageTimer <= 0) {
+        this.player.mirageTimer = this.player.mirageInterval;
+        if (this.enemies.length > 0) {
+          this.triggerMirageBlades();
+        }
+      }
+    }
+
+    // Collect sustained orbit contact shred hits cleanly
+    const orbitHits: { enemy: Enemy; bladeDamage: number }[] = [];
+
+    for (let i = this.mirageBlades.length - 1; i >= 0; i--) {
+      const b = this.mirageBlades[i];
+      if (b.state === 'orbit') {
+        b.orbitAngle += MIRAGE_ORBIT_SPEED * dt;
+        b.angle = b.orbitAngle + Math.PI / 2;
+        const pos = calculateBladeOrbitPos(this.player.x, this.player.y, b.orbitAngle, MIRAGE_ORBIT_RADIUS);
+        b.x = pos.x;
+        b.y = pos.y;
+
+        // Sustained close-range orbit shred between salvos
+        for (let k = 0; k < this.enemies.length; k++) {
+          const e = this.enemies[k];
+          if (this.mirageOrbitHitCooldowns.has(e.id)) continue;
+          if (Math.hypot(e.x - b.x, e.y - b.y) <= e.radius + 14) {
+            this.mirageOrbitHitCooldowns.set(e.id, MIRAGE_ORBIT_HIT_COOLDOWN);
+            orbitHits.push({ enemy: e, bladeDamage: b.damage });
+          }
+        }
+      } else if (b.state === 'queued') {
+        // Keep orbiting while waiting tiny sequential stagger delay
+        b.orbitAngle += MIRAGE_ORBIT_SPEED * dt;
+        b.angle = b.orbitAngle + Math.PI / 2;
+        const pos = calculateBladeOrbitPos(this.player.x, this.player.y, b.orbitAngle, MIRAGE_ORBIT_RADIUS);
+        b.x = pos.x;
+        b.y = pos.y;
+        b.launchDelay -= dt;
+
+        if (b.launchDelay <= 0) {
+          b.state = 'outbound';
+          b.life = 0;
+          b.hitEnemies.clear();
+
+          if (this.enemies.length > 0) {
+            const targetEnemy = this.enemies[b.id % this.enemies.length];
+            b.targetEnemyId = targetEnemy.id;
+            b.targetX = targetEnemy.x;
+            b.targetY = targetEnemy.y;
+          } else {
+            b.targetX = b.x + Math.cos(b.orbitAngle) * 400;
+            b.targetY = b.y + Math.sin(b.orbitAngle) * 400;
+          }
+
+          const vel = calculateBladeHomingVelocity(b.x, b.y, b.targetX, b.targetY, MIRAGE_OUTBOUND_SPEED);
+          b.vx = vel.vx;
+          b.vy = vel.vy;
+          b.angle = vel.angle;
+          sound.playMirageLaunch();
+        }
+      } else if (b.state === 'outbound') {
+        b.life += dt;
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // Pierce through enemies without stopping!
+        this.applyMirageBladePierceHits(b);
+
+        // Once off-screen, record rim position and wait for all blades to exit
+        if (isBladeOutsideScreen(b.x, b.y, this.width, this.height, MIRAGE_OFFSCREEN_MARGIN) || b.life >= 1.8) {
+          const clamped = clampBladeToOffscreenRim(b.x, b.y, this.width, this.height, MIRAGE_OFFSCREEN_MARGIN);
+          b.x = clamped.x;
+          b.y = clamped.y;
+          b.vx = 0;
+          b.vy = 0;
+          b.life = 0;
+          b.state = 'waiting';
+          b.angle = Math.atan2(this.player.y - b.y, this.player.x - b.x);
+        }
+      } else if (b.state === 'waiting') {
+        b.life += dt;
+        b.angle = Math.atan2(this.player.y - b.y, this.player.x - b.x);
+      } else if (b.state === 'returning') {
+        b.life += dt;
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // Pierce through enemies on the return convergence sweep!
+        this.applyMirageBladePierceHits(b);
+
+        // Remove only after flying across the battlefield through the player and exiting the far edge
+        if (
+          (b.life >= 0.18 && isBladeOutsideScreen(b.x, b.y, this.width, this.height, MIRAGE_OFFSCREEN_MARGIN + 30)) ||
+          b.life >= 2.2
+        ) {
+          this.mirageBlades.splice(i, 1);
+        }
+      }
+    }
+
+    // Apply collected orbit shred hits safely outside the iteration loop
+    for (const hit of orbitHits) {
+      const e = hit.enemy;
+      if (e.hp <= 0) continue;
+      e.hitFlashTimer = 0.08;
+      if (this.player.cryoSlow) {
+        e.frozenTimer = Math.max(e.frozenTimer ?? 0, 1.0);
+      }
+      const orbitDmg = Math.max(
+        1,
+        Math.round(hit.bladeDamage * MIRAGE_ORBIT_CONTACT_SHARE * statusDamageMultiplier(e, this.player))
+      );
+      this.damageEnemy(e, orbitDmg);
+      this.spawnImpactSparks(e.x, e.y, '#38bdf8', 2);
+      if (e.hp <= 0) {
+        const idx = this.enemies.indexOf(e);
+        if (idx >= 0) this.killEnemy(e, idx);
+      }
+    }
+
+    // Check if ALL salvo blades have exited the screen and finished the brief wait pause
+    const activeBlades = this.mirageBlades.filter((b) => b.state !== 'orbit' && b.state !== 'dead');
+    if (
+      activeBlades.length > 0 &&
+      activeBlades.every((b) => b.state === 'waiting' && b.life >= MIRAGE_WAIT_PAUSE)
+    ) {
+      // Snapshot player's current position at convergence instant and fire all blades straight through it!
+      const rx = this.player.x;
+      const ry = this.player.y;
+      sound.playMirageLaunch();
+      this.pushShockwave({
+        id: Math.random(),
+        x: rx,
+        y: ry,
+        radius: 18,
+        maxRadius: 90,
+        color: '#f472b6',
+        width: 2.5,
+        life: 0,
+        maxLife: 0.25,
+      });
+
+      for (const b of activeBlades) {
+        b.state = 'returning';
+        b.life = 0;
+        b.hitEnemies.clear();
+        b.targetX = rx;
+        b.targetY = ry;
+        const ret = calculateBladeHomingVelocity(b.x, b.y, rx, ry, MIRAGE_RETURN_SPEED);
+        b.vx = ret.vx;
+        b.vy = ret.vy;
+        b.angle = ret.angle;
+      }
+    }
+  }
+
+  // Testing Sandbox methods for Super-Weapons
+  public testEquipGateOfBabylon() {
+    const nextLvl = Math.min(3, (this.player.babylonLevel || 0) + 1);
+    this.player.babylonLevel = nextLvl;
+    this.player.babylonInterval = atLevel(LVL_BABYLON_INTERVAL, nextLvl);
+    this.player.babylonDamageScale = atLevel(LVL_BABYLON_DAMAGE_SCALE, nextLvl);
+    this.player.babylonTimer = this.player.babylonInterval;
+    this.triggerGateOfBabylon();
+  }
+
+  public testTriggerGateOfBabylon() {
+    this.triggerGateOfBabylon();
+  }
+
+  public testEquipSingularityMeteor() {
+    const nextLvl = Math.min(3, (this.player.meteorLevel || 0) + 1);
+    this.player.meteorLevel = nextLvl;
+    this.player.meteorInterval = atLevel(LVL_METEOR_INTERVAL, nextLvl);
+    this.player.meteorDamageScale = atLevel(LVL_METEOR_DAMAGE_SCALE, nextLvl);
+    this.player.meteorTimer = this.player.meteorInterval;
+    this.triggerSingularityMeteor();
+  }
+
+  public testTriggerSingularityMeteor() {
+    this.triggerSingularityMeteor();
+  }
+
+  public testEquipDivineIonBeam() {
+    const nextLvl = Math.min(3, (this.player.ionLevel || 0) + 1);
+    this.player.ionLevel = nextLvl;
+    this.player.ionInterval = atLevel(LVL_ION_INTERVAL, nextLvl);
+    this.player.ionDamageScale = atLevel(LVL_ION_DAMAGE_SCALE, nextLvl);
+    this.player.ionTimer = this.player.ionInterval;
+    this.triggerDivineIonStrikes();
+  }
+
+  public testTriggerDivineIonBeam() {
+    this.triggerDivineIonStrikes();
+  }
+
+  public testEquipPrismAegis() {
+    const nextLvl = Math.min(3, (this.player.aegisLevel || 0) + 1);
+    this.player.aegisLevel = nextLvl;
+    this.player.aegisRadius = atLevel(LVL_AEGIS_RADIUS, nextLvl);
+    this.player.aegisDamageScale = atLevel(LVL_AEGIS_BURST_DAMAGE_SCALE, nextLvl);
+    this.triggerPrismAegisBurst();
+  }
+
+  public testTriggerPrismAegis() {
+    this.triggerPrismAegisBurst();
+  }
+
+  public testEquipMirageBlades() {
+    const nextLvl = Math.min(3, (this.player.mirageLevel || 0) + 1);
+    this.player.mirageLevel = nextLvl;
+    this.player.mirageInterval = atLevel(LVL_MIRAGE_INTERVAL, nextLvl);
+    this.player.mirageDamageScale = atLevel(LVL_MIRAGE_DAMAGE_SCALE, nextLvl);
+    this.player.mirageTimer = this.player.mirageInterval;
+
+    // Reset current blades to full halo then launch sequential salvo
+    this.mirageBlades = [];
+    const desiredCount = atLevel(LVL_MIRAGE_COUNT, nextLvl);
+    const baseAngle = this.pulseAnimTime * MIRAGE_ORBIT_SPEED;
+    for (let idx = 0; idx < desiredCount; idx++) {
+      const angle = baseAngle + (idx * (Math.PI * 2)) / desiredCount;
+      const pos = calculateBladeOrbitPos(this.player.x, this.player.y, angle, MIRAGE_ORBIT_RADIUS);
+      this.mirageBlades.push({
+        id: this.nextMirageBladeId++,
+        orbitAngle: angle,
+        state: 'orbit',
+        launchDelay: 0,
+        x: pos.x,
+        y: pos.y,
+        vx: 0,
+        vy: 0,
+        angle: angle + Math.PI / 2,
+        targetX: 0,
+        targetY: 0,
+        targetEnemyId: null,
+        damage: mirageDamage(this.player, nextLvl),
+        life: 0,
+        hitEnemies: new Set(),
+      });
+    }
+    this.triggerMirageBlades();
+  }
+
+  public testTriggerMirageBlades() {
+    this.triggerMirageBlades();
   }
 
   private updateSatellites(dt: number) {
@@ -3095,6 +4940,40 @@ export class GameEngine {
         }
       }
 
+      // Prism Aegis reflection barrier check
+      if (!despawn && this.player.aegisLevel > 0) {
+        if (projectileHitsAegisBarrier(this.player.x, this.player.y, this.player.aegisRadius, ep.x, ep.y)) {
+          despawn = true;
+          const speed = Math.hypot(ep.vx, ep.vy) * 1.4;
+          const refVel = calculateReflectedVelocity(this.player.x, this.player.y, ep.x, ep.y, speed);
+          const lvl = this.player.aegisLevel;
+          const dmg = Math.round(ep.damage * atLevel([2.0, 3.5, 5.0], lvl));
+          this.projectiles.push({
+            id: this.nextProjId++,
+            x: ep.x,
+            y: ep.y,
+            vx: refVel.vx,
+            vy: refVel.vy,
+            damage: dmg,
+            pierce: atLevel([2, 3, 5], lvl),
+            radius: 6,
+            color: '#38bdf8',
+            trail: [],
+            isCrit: true,
+            life: 0,
+            maxLife: 1.5,
+            hitEnemyIds: new Set(),
+          });
+          this.spawnImpactSparks(ep.x, ep.y, '#38bdf8', 6);
+          sound.playAegisReflect();
+          this.player.aegisReflectedCount++;
+          if (this.player.aegisReflectedCount >= atLevel(LVL_AEGIS_BURST_THRESHOLD, lvl)) {
+            this.player.aegisReflectedCount = 0;
+            this.triggerPrismAegisBurst();
+          }
+        }
+      }
+
       // Player collision — either wing can be struck
       const hit = despawn
         ? null
@@ -3128,7 +5007,7 @@ export class GameEngine {
           });
           this.spawnImpactSparks(contactX, contactY, '#a3e635', 5);
           sound.playClick(true);
-        } else if (this.player.naniteShieldActive) {
+        } else if (!this.isGodMode() && this.player.naniteShieldActive) {
           // Nanite shield absorbs hit
           this.player.naniteShieldActive = false;
           this.player.naniteShieldTimer = 0;
@@ -3145,7 +5024,7 @@ export class GameEngine {
             maxLife: 0.25,
           });
           sound.playClick(true);
-        } else if (this.player.invincibleTimer <= 0 && !this.devInvincible) {
+        } else if (this.player.invincibleTimer <= 0 && !this.isGodMode()) {
           if (this.applyPlayerDamage(ep.damage, contactX, contactY, 0.4, 7)) return;
         }
       }
@@ -3231,6 +5110,7 @@ export class GameEngine {
     invincibleSeconds: number,
     shake: number
   ): boolean {
+    if (this.isGodMode()) return false;
     const incoming = amount - this.soakWithTempShield(amount);
     if (incoming <= 0) return false;
 
@@ -3497,13 +5377,23 @@ export class GameEngine {
 
     // A mode that doubles player firepower also doubles the swarm to match.
     const mode = this.mode();
-    if (this.enemies.length >= mode.maxAlive) return;
+    const effectiveMaxAlive = mode.maxAlive + (this.player.swarmCapBonus || 0);
+    if (this.enemies.length >= effectiveMaxAlive) return;
 
     if (this.nextWaveTimer >= spawnInterval) {
       this.nextWaveTimer = 0;
-      const type = pickEnemyType(this.gameTime, Math.random());
+      let type = pickEnemyType(this.gameTime, Math.random());
+      if (mode.heroPrey && this.player.swarmEliteChance && Math.random() < this.player.swarmEliteChance) {
+        const elites: SpawnableEnemyType[] = ['speeder', 'tank', 'charger'];
+        type = elites[Math.floor(Math.random() * elites.length)];
+      }
       const count = mode.heroPrey
-        ? soldierWaveCount(mode.spawnMultiplier, mode.swarmMultiplier, this.enemies.length, mode.maxAlive)
+        ? soldierWaveCount(
+            mode.spawnMultiplier,
+            mode.swarmMultiplier * (1 + (this.player.swarmSpawnScaleBonus || 0)),
+            this.enemies.length,
+            effectiveMaxAlive
+          )
         : mode.spawnMultiplier;
 
       for (let i = 0; i < count; i++) {
@@ -3538,7 +5428,11 @@ export class GameEngine {
   /** Builds one enemy at a chosen point; wave spawning and the sandbox share it. */
   private createEnemy(type: EnemyType, x: number, y: number) {
     const def = ENEMY_TYPES[type];
-    const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
+    const hpMult = this.mode().enemyHpMultiplier ?? 1;
+    let hp = Math.round(enemyHpFor(def, this.gameTime, this.enemyGrowthScale()) * hpMult);
+    if (this.mode().heroPrey && this.player.swarmHpScale) {
+      hp = Math.round(hp * (1 + this.player.swarmHpScale));
+    }
     const threat = this.enemyThreatScale();
 
     this.enemies.push({
@@ -3579,7 +5473,8 @@ export class GameEngine {
 
   private spawnBoss(x: number = this.width / 2, y: number = -80) {
     const def = ENEMY_TYPES.boss;
-    const hp = enemyHpFor(def, this.gameTime, this.enemyGrowthScale());
+    const hpMult = this.mode().enemyHpMultiplier ?? 1;
+    const hp = Math.round(enemyHpFor(def, this.gameTime, this.enemyGrowthScale()) * hpMult);
 
     this.enemies.push({
       id: this.nextEnemyId++,
@@ -3664,6 +5559,14 @@ export class GameEngine {
       if (e.frozenTimer && e.frozenTimer > 0) {
         e.frozenTimer -= dt;
         currentSlow *= this.player.cryoSlowMultiplier;
+      }
+      if (this.mode().heroPrey) {
+        if (this.swarmAdrenalTimer > 0 && this.player.swarmAdrenalSpeedBonus) {
+          currentSlow *= 1 + this.player.swarmAdrenalSpeedBonus;
+        }
+        if (this.preyBeaconTimer > 0 && this.player.swarmBeaconBonus) {
+          currentSlow *= 1 + this.player.swarmBeaconBonus;
+        }
       }
 
       // A hard hold (Grid Verdict's cut): movement goes to zero outright, which
@@ -3753,7 +5656,7 @@ export class GameEngine {
           sound.playHit();
         }
 
-        if (!heroPrey && this.player.naniteShieldActive) {
+        if (!heroPrey && !this.isGodMode() && this.player.naniteShieldActive) {
           this.player.naniteShieldActive = false;
           this.player.naniteShieldTimer = 0;
           this.player.timeSinceLastDamage = 0;
@@ -3769,7 +5672,7 @@ export class GameEngine {
             maxLife: 0.25,
           });
           sound.playClick(true);
-        } else if (!heroPrey && this.player.invincibleTimer <= 0 && !this.devInvincible) {
+        } else if (!heroPrey && this.player.invincibleTimer <= 0 && !this.isGodMode()) {
           let incomingDmg = afterDroneShield(e.damage, this.player);
           if (this.hasPilot('beta_phalanx')) {
             incomingDmg = Math.round(incomingDmg * 0.8);
@@ -3862,7 +5765,37 @@ export class GameEngine {
 
     // Predator: a soldier dying is just a soldier dying — no loot, no cards,
     // no experience for the prey. The hive split above already ran.
-    if (soldierDeath) return;
+    if (soldierDeath) {
+      if (this.player.swarmCorpseBlastDamage && this.player.swarmCorpseBlastDamage > 0) {
+        const radius = this.player.swarmCorpseBlastRadius || 60;
+        this.shockwaves.push({
+          id: Math.random(),
+          x: e.x,
+          y: e.y,
+          radius: 8,
+          maxRadius: radius,
+          color: '#84cc16',
+          width: 3,
+          life: 0,
+          maxLife: 0.25,
+        });
+        const pdx = this.player.x - e.x;
+        const pdy = this.player.y - e.y;
+        if (pdx * pdx + pdy * pdy <= radius * radius) {
+          this.damagePrey(this.player.swarmCorpseBlastDamage);
+          if (this.floatingTexts.length < 20) {
+            this.addFloatingText(
+              e.x,
+              e.y - 14,
+              `酸爆 -${this.player.swarmCorpseBlastDamage}`,
+              '#84cc16',
+              false
+            );
+          }
+        }
+      }
+      return;
+    }
 
     // Epsilon Carrier Passive: 40% chance on kill to drop +2 HP nanite heal
     if (this.hasPilot('epsilon_carrier') && Math.random() < 0.4) {
@@ -3974,6 +5907,39 @@ export class GameEngine {
     for (let i = this.gems.length - 1; i >= 0; i--) {
       const g = this.gems[i];
       g.rotation += g.rotSpeed * dt;
+
+      if (this.mode().heroPrey) {
+        if (!this.pilot) continue;
+        const pdx = this.pilot.x - g.x;
+        const pdy = this.pilot.y - g.y;
+        const pDistSq = pdx * pdx + pdy * pdy;
+        const pilotMagnetSq = (this.pilot.radius + 150) * (this.pilot.radius + 150);
+        if (pDistSq < pilotMagnetSq || g.attracted) {
+          g.attracted = true;
+          const dist = Math.sqrt(pDistSq);
+          const pullSpeed = Math.max(3.5, 12 - dist * 0.02);
+          g.vx = (pdx / Math.max(1, dist)) * pullSpeed;
+          g.vy = (pdy / Math.max(1, dist)) * pullSpeed;
+          g.x += g.vx * (dt * 60);
+          g.y += g.vy * (dt * 60);
+
+          const pickupDist = this.pilot.radius + g.radius + 10;
+          if (pDistSq < pickupDist * pickupDist) {
+            this.gems.splice(i, 1);
+            this.addPredatorEnergy(g.value);
+            sound.playExp(Math.min(20, Math.floor(this.predatorEnergy) % 10));
+            if (this.floatingTexts.length < 20) {
+              this.addFloatingText(this.pilot.x, this.pilot.y - 18, `+${g.value} 变异质`, '#f43f5e', false);
+            }
+          }
+        } else {
+          g.x += g.vx;
+          g.y += g.vy;
+          g.vx *= 0.95;
+          g.vy *= 0.95;
+        }
+        continue;
+      }
 
       // Gems stream toward the nearer wing and can be banked by either one.
       const e1x = wings.p1.x - g.x;

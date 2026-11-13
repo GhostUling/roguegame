@@ -20,6 +20,7 @@ import { CodexModal } from './components/CodexModal';
 import { SandboxPanel } from './components/SandboxPanel';
 import { RespawnSlots } from './components/RespawnSlots';
 import { DebugTracePanel } from './components/DebugTracePanel';
+import { SettingsModal } from './components/SettingsModal';
 import { DebugEvent } from './game/engine/debugTrace';
 import { flushTrace } from './game/infra/traceSink';
 
@@ -66,6 +67,15 @@ export default function App() {
   });
   const [timeScale, setTimeScale] = useState<number>(1);
   const [controlMode, setControlMode] = useState<'keys' | 'mouse'>('keys');
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  /** Persisted settings switch: player/pilot invincibility across modes. */
+  const [settingsInvincible, setSettingsInvincible] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('geom_overload_invincible') === '1';
+    } catch {
+      return false;
+    }
+  });
   /** Sandbox only; reset with every new run so it can never leak into a real one. */
   const [devInvincible, setDevInvincible] = useState<boolean>(false);
   /** Test switch: which card table the sandbox draws from. */
@@ -153,6 +163,11 @@ export default function App() {
     };
   }, []);
 
+  // Sync the global settings invincible flag into the live engine.
+  useEffect(() => {
+    engineRef.current?.setSettingsInvincible(settingsInvincible);
+  }, [settingsInvincible]);
+
   // Push the trace switch into the live engine and poll its ring buffer while
   // it is on; the engine writes at bullet-hit rate, React only needs a glance.
   useEffect(() => {
@@ -230,6 +245,10 @@ export default function App() {
         setIsCodexOpen(false);
         return;
       }
+      if (isSettingsOpen && e.key === 'Escape') {
+        setIsSettingsOpen(false);
+        return;
+      }
       if ((e.key === 'Escape' || e.key.toLowerCase() === 'p') && gameState === 'playing') {
         pauseGame();
       } else if ((e.key === 'Escape' || e.key.toLowerCase() === 'p') && gameState === 'paused') {
@@ -239,7 +258,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, isCodexOpen, handleOpenCodex, pauseGame, resumeGame]);
+  }, [gameState, isCodexOpen, isSettingsOpen, handleOpenCodex, pauseGame, resumeGame]);
 
   const startGameWithChar = useCallback(
     (charId: CharacterId, twinId?: CharacterId) => {
@@ -288,6 +307,20 @@ export default function App() {
     sound.playClick(true);
   }, []);
 
+  const toggleSettingsInvincible = useCallback(() => {
+    setSettingsInvincible((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('geom_overload_invincible', next ? '1' : '0');
+      } catch {
+        // Ignore
+      }
+      engineRef.current?.setSettingsInvincible(next);
+      return next;
+    });
+    sound.playClick(true);
+  }, []);
+
   const handleChangeTimeScale = useCallback((scale: number) => {
     setTimeScale(scale);
     if (engineRef.current) {
@@ -325,8 +358,86 @@ export default function App() {
     });
   }, []);
 
-  const handleChangeSandboxPool = useCallback((pool: 'standard' | 'overflow') => {    sandboxPoolRef.current = pool;
+  const handleChangeSandboxPool = useCallback((pool: 'standard' | 'overflow') => {
+    sandboxPoolRef.current = pool;
     setSandboxPool(pool);
+  }, []);
+
+  const handleEquipGaster = useCallback(() => {
+    engineRef.current?.testEquipGasterBlasters();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerGaster = useCallback(() => {
+    engineRef.current?.testTriggerGasterBlasters();
+  }, []);
+
+  const handleEquipIaijutsu = useCallback(() => {
+    engineRef.current?.testEquipVoidIaijutsu();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerIaijutsu = useCallback(() => {
+    engineRef.current?.testTriggerVoidIaijutsu();
+  }, []);
+
+  const handleEquipBabylon = useCallback(() => {
+    engineRef.current?.testEquipGateOfBabylon();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerBabylon = useCallback(() => {
+    engineRef.current?.testTriggerGateOfBabylon();
+  }, []);
+
+  const handleEquipMeteor = useCallback(() => {
+    engineRef.current?.testEquipSingularityMeteor();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerMeteor = useCallback(() => {
+    engineRef.current?.testTriggerSingularityMeteor();
+  }, []);
+
+  const handleEquipIon = useCallback(() => {
+    engineRef.current?.testEquipDivineIonBeam();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerIon = useCallback(() => {
+    engineRef.current?.testTriggerDivineIonBeam();
+  }, []);
+
+  const handleEquipAegis = useCallback(() => {
+    engineRef.current?.testEquipPrismAegis();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerAegis = useCallback(() => {
+    engineRef.current?.testTriggerPrismAegis();
+  }, []);
+
+  const handleEquipMirage = useCallback(() => {
+    engineRef.current?.testEquipMirageBlades();
+    if (engineRef.current) {
+      setPlayerState({ ...engineRef.current.player });
+    }
+  }, []);
+
+  const handleTriggerMirage = useCallback(() => {
+    engineRef.current?.testTriggerMirageBlades();
   }, []);
 
   const handleToggleDebugTrace = useCallback(() => {
@@ -425,6 +536,7 @@ export default function App() {
           onTriggerSkill={handleTriggerSkill}
           onChangeTimeScale={handleChangeTimeScale}
           onToggleControlMode={handleToggleControlMode}
+          isInvincible={settingsInvincible || devInvincible}
           predator={predatorState}
         />
       )}
@@ -447,6 +559,27 @@ export default function App() {
           onSpawn={handleSpawnTestEnemies}
           onClear={handleClearTestField}
           onToggleInvincible={handleToggleDevInvincible}
+          gasterLevel={playerState.gasterLevel || 0}
+          voidIaijutsuLevel={playerState.voidIaijutsuLevel || 0}
+          babylonLevel={playerState.babylonLevel || 0}
+          meteorLevel={playerState.meteorLevel || 0}
+          ionLevel={playerState.ionLevel || 0}
+          aegisLevel={playerState.aegisLevel || 0}
+          mirageLevel={playerState.mirageLevel || 0}
+          onEquipGaster={handleEquipGaster}
+          onTriggerGaster={handleTriggerGaster}
+          onEquipIaijutsu={handleEquipIaijutsu}
+          onTriggerIaijutsu={handleTriggerIaijutsu}
+          onEquipBabylon={handleEquipBabylon}
+          onTriggerBabylon={handleTriggerBabylon}
+          onEquipMeteor={handleEquipMeteor}
+          onTriggerMeteor={handleTriggerMeteor}
+          onEquipIon={handleEquipIon}
+          onTriggerIon={handleTriggerIon}
+          onEquipAegis={handleEquipAegis}
+          onTriggerAegis={handleTriggerAegis}
+          onEquipMirage={handleEquipMirage}
+          onTriggerMirage={handleTriggerMirage}
         />
       )}
 
@@ -463,6 +596,7 @@ export default function App() {
             setGameState('character_select');
           }}
           onOpenCodex={() => handleOpenCodex()}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
       )}
 
@@ -498,6 +632,8 @@ export default function App() {
           onToggleMute={toggleMute}
           infiniteReroll={infiniteReroll}
           onToggleInfiniteReroll={toggleInfiniteReroll}
+          settingsInvincible={settingsInvincible}
+          onToggleSettingsInvincible={toggleSettingsInvincible}
           debugTrace={debugTrace}
           onToggleDebugTrace={handleToggleDebugTrace}
           onResume={resumeGame}
@@ -524,6 +660,20 @@ export default function App() {
         onClose={handleCloseCodex}
         currentUpgradeLevels={playerState?.upgradeLevels || upgradeLevels}
         initialSelectedKey={codexInitialKey}
+      />
+
+      {/* System Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        isMuted={isMuted}
+        onToggleMute={toggleMute}
+        invincible={settingsInvincible}
+        onToggleInvincible={toggleSettingsInvincible}
+        infiniteReroll={infiniteReroll}
+        onToggleInfiniteReroll={toggleInfiniteReroll}
+        debugTrace={debugTrace}
+        onToggleDebugTrace={handleToggleDebugTrace}
       />
     </div>
   );

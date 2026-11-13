@@ -11,6 +11,7 @@ import {
   missileShotDamage,
   railgunShotDamage,
 } from '../game/systems/drones';
+import { getSynergyLedger } from '../game/systems/resonanceSynergies';
 import {
   Play,
   RotateCcw,
@@ -30,6 +31,8 @@ import {
   Flame,
   Bookmark,
   RefreshCw,
+  ShieldCheck,
+  ShieldOff,
 } from 'lucide-react';
 
 interface PauseModalProps {
@@ -43,6 +46,9 @@ interface PauseModalProps {
   /** Test switch: level-up rerolls stop consuming the run's reroll count. */
   infiniteReroll: boolean;
   onToggleInfiniteReroll: () => void;
+  /** Settings switch: player/pilot takes no damage from any source. */
+  settingsInvincible: boolean;
+  onToggleSettingsInvincible: () => void;
   /** Test switch: overlay the hit/spawn-shot runtime trace. */
   debugTrace: boolean;
   onToggleDebugTrace: () => void;
@@ -61,6 +67,8 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onToggleMute,
   infiniteReroll,
   onToggleInfiniteReroll,
+  settingsInvincible,
+  onToggleSettingsInvincible,
   debugTrace,
   onToggleDebugTrace,
   onResume,
@@ -279,7 +287,60 @@ export const PauseModal: React.FC<PauseModalProps> = ({
         {/* Tab Content Body (Scrollable) */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
           {activeTab === 'upgrades' ? (
-            <div>
+            <div className="space-y-4">
+              {(player.gameMode === 'resonance' ||
+                (player.gasterLevel || 0) > 0 ||
+                (player.voidIaijutsuLevel || 0) > 0 ||
+                (player.babylonLevel || 0) > 0 ||
+                (player.meteorLevel || 0) > 0 ||
+                (player.ionLevel || 0) > 0 ||
+                (player.aegisLevel || 0) > 0 ||
+                (player.mirageLevel || 0) > 0) && (
+                <div className="p-3.5 rounded-xl bg-slate-950/75 border border-violet-500/35 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-violet-300 font-bold text-xs uppercase tracking-wider">
+                      <Sparkles size={14} className="text-fuchsia-400" />
+                      <span>超阶神兵专属联动 (Resonance Synergies)</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      同时持有任意一组神兵即自动触发
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {getSynergyLedger(player).map(({ synergy, active, hasHalf }) => (
+                      <div
+                        key={synergy.id}
+                        className={`p-2.5 rounded-lg border text-xs transition-colors ${
+                          active
+                            ? 'bg-fuchsia-950/35 border-fuchsia-400/60 text-white shadow-[0_0_12px_rgba(232,121,249,0.2)]'
+                            : hasHalf
+                            ? 'bg-violet-950/20 border-violet-500/35 text-slate-200'
+                            : 'bg-slate-900/50 border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="font-bold text-xs" style={{ color: active ? synergy.accentColor : undefined }}>
+                            {synergy.nameZh}
+                          </span>
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                              active
+                                ? 'bg-fuchsia-500/20 border-fuchsia-400/50 text-fuchsia-200'
+                                : hasHalf
+                                ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                                : 'bg-slate-800 border-slate-700 text-slate-500'
+                            }`}
+                          >
+                            {active ? '已联动' : hasHalf ? '差 1 件' : '未激活'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] leading-snug opacity-85">{synergy.summary}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {upgradeEntries.length === 0 ? (
                 <div className="py-16 text-center space-y-3">
                   <div className="w-12 h-12 mx-auto rounded-full bg-slate-800/60 flex items-center justify-center text-slate-500">
@@ -582,9 +643,11 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                   </div>
 
                   <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-0.5">
-                    <span className="text-slate-400 text-[11px]">脱战自愈速率</span>
+                    <span className="text-slate-400 text-[11px]">生命恢复速率</span>
                     <div className="text-sm font-bold text-emerald-300">
-                      +{player.shieldRegenRate.toFixed(1)} HP/s
+                      {(player.hpRegenRate || 0) > 0
+                        ? `常驻 +${(player.hpRegenRate || 0).toFixed(1)} / 脱战 +${((player.hpRegenRate || 0) + player.shieldRegenRate).toFixed(1)} HP/s`
+                        : `脱战 +${player.shieldRegenRate.toFixed(1)} HP/s`}
                     </div>
                   </div>
 
@@ -592,10 +655,14 @@ export const PauseModal: React.FC<PauseModalProps> = ({
                     <span className="text-slate-400 text-[11px]">自愈触发状态</span>
                     <div
                       className={`text-xs font-bold ${
-                        isOutOfCombat ? 'text-emerald-300' : 'text-amber-400'
+                        isOutOfCombat || (player.hpRegenRate || 0) > 0 ? 'text-emerald-300' : 'text-amber-400'
                       }`}
                     >
-                      {isOutOfCombat ? `🟢 自愈中 (${timeOutSec}s)` : `⚠️ 受创 (${timeOutSec}s / 3.0s)`}
+                      {isOutOfCombat
+                        ? `🟢 满效自愈中 (${timeOutSec}s)`
+                        : (player.hpRegenRate || 0) > 0
+                        ? `🟢 常驻恢复中 (${timeOutSec}s / 3.0s)`
+                        : `⚠️ 受创 (${timeOutSec}s / 3.0s)`}
                     </div>
                   </div>
 
@@ -794,6 +861,19 @@ export const PauseModal: React.FC<PauseModalProps> = ({
             >
               {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
               <span>{isMuted ? '开启音效' : '静音'}</span>
+            </button>
+
+            <button
+              onClick={onToggleSettingsInvincible}
+              title="设置：开启后免疫所有敌弹与碰撞伤害"
+              className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer border ${
+                settingsInvincible
+                  ? 'bg-emerald-500/20 border-emerald-400/70 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
+                  : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-300'
+              }`}
+            >
+              {settingsInvincible ? <ShieldCheck size={15} /> : <ShieldOff size={15} />}
+              <span>无敌 {settingsInvincible ? '开' : '关'}</span>
             </button>
 
             <button

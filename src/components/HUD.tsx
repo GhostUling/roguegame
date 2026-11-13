@@ -32,6 +32,7 @@ interface HUDProps {
   onTriggerSkill: () => void;
   onChangeTimeScale: (scale: number) => void;
   onToggleControlMode: () => void;
+  isInvincible?: boolean;
   /** Predator only: the hunt snapshot built by the engine. */
   predator?: PredatorSnapshot | null;
 }
@@ -48,6 +49,7 @@ export const HUD: React.FC<HUDProps> = ({
   onTriggerSkill,
   onChangeTimeScale,
   onToggleControlMode,
+  isInvincible = false,
   predator,
 }) => {
   const char = getCharacterDef(player.characterId);
@@ -122,6 +124,11 @@ export const HUD: React.FC<HUDProps> = ({
                 {predator.pilotHp} / {predator.pilotMaxHp} HP
               </div>
             </div>
+            {isInvincible && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono-numbers font-bold text-emerald-300 bg-emerald-950/80 border border-emerald-400/60">
+                无敌中
+              </span>
+            )}
             <div className="flex items-center gap-1.5 text-[10px] font-mono-numbers">
               {predator.preyUpgrades.length > 0 && (
                 <span
@@ -138,6 +145,28 @@ export const HUD: React.FC<HUDProps> = ({
               <span className="text-slate-500 px-1 py-1">
                 下一条 {predator.nextBuffIn.toFixed(0)}s
               </span>
+            </div>
+          </div>
+
+          {/* Monster Evolution Energy Bar */}
+          <div className="flex items-center gap-3">
+            <div className="glass-panel px-3 py-1 rounded-md text-xs font-bold text-rose-300 font-mono-numbers shrink-0 border border-rose-500/30 flex items-center gap-1.5">
+              <span>突变进化</span>
+              <span className="text-amber-300">Lv.{predator.monsterLevel}</span>
+            </div>
+            <div className="relative w-56 sm:w-72 h-3.5 bg-slate-900/90 rounded-full overflow-hidden border border-rose-900/60">
+              <div
+                className="h-full bg-gradient-to-r from-rose-600 via-pink-500 to-amber-400 transition-all duration-150 rounded-full shadow-[0_0_10px_rgba(244,63,94,0.6)]"
+                style={{
+                  width: `${Math.max(0, Math.min(100, (predator.energy / predator.energyTarget) * 100))}%`,
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono-numbers text-slate-100 font-bold">
+                {predator.energy} / {predator.energyTarget} 变异质
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono-numbers">
+              撕咬/拾取变异球充能升级
             </div>
           </div>
 
@@ -249,6 +278,11 @@ export const HUD: React.FC<HUDProps> = ({
             <div className="flex items-center justify-between text-xs font-mono-numbers">
               <span className="flex items-center gap-1 text-rose-400 font-medium">
                 <Shield size={13} /> HP
+                {isInvincible && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-950/80 border border-emerald-400/60 font-bold">
+                    无敌中
+                  </span>
+                )}
                 {twinDef && (
                   <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-fuchsia-300 bg-fuchsia-950/70 border border-fuchsia-500/40">
                     双机共享
@@ -257,7 +291,13 @@ export const HUD: React.FC<HUDProps> = ({
                 {player.hp < player.maxHp ? (
                   (player.timeSinceLastDamage || 0) >= 3.0 ? (
                     <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/40 animate-pulse">
-                      脱战自愈 +{(player.shieldRegenRate).toFixed(1)}/s
+                      {(player.hpRegenRate || 0) > 0
+                        ? `恢复 +${((player.hpRegenRate || 0) + player.shieldRegenRate).toFixed(1)}/s`
+                        : `脱战自愈 +${player.shieldRegenRate.toFixed(1)}/s`}
+                    </span>
+                  ) : (player.hpRegenRate || 0) > 0 ? (
+                    <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/40">
+                      生命恢复 +{(player.hpRegenRate || 0).toFixed(1)}/s
                     </span>
                   ) : (
                     <span className="ml-1 text-[10px] text-slate-500 font-normal">
@@ -350,7 +390,11 @@ export const HUD: React.FC<HUDProps> = ({
           </div>
           <span className="text-slate-700">|</span>
           <div className="text-emerald-400">
-            <span>脱战自愈: {player.shieldRegenRate.toFixed(1)}/s</span>
+            <span>
+              {(player.hpRegenRate || 0) > 0
+                ? `恢复: ${(player.hpRegenRate || 0).toFixed(1)}/s (脱战+${player.shieldRegenRate.toFixed(1)}/s)`
+                : `脱战自愈: ${player.shieldRegenRate.toFixed(1)}/s`}
+            </span>
           </div>
           {player.orbitSatellites > 0 && (
             <>

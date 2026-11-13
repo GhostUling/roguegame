@@ -8,6 +8,7 @@ import {
   preyUpgradeCandidates,
 } from '../engine/preyBuff';
 import { ALL_UPGRADES } from '../cards/upgrades';
+import { MONSTER_UPGRADES } from '../cards/monsterUpgrades';
 import { poolForMode } from '../cards/upgradePools';
 import { GAME_MODES } from '../core/modes';
 import { Player } from '../core/types';
@@ -22,7 +23,12 @@ const allMaxed = (): Record<string, number> =>
 
 describe('prey escalation draws the run pool', () => {
   it('the hunt draws from the standard card table, not a second one', () => {
-    expect(poolForMode(GAME_MODES.predator)).toBe(ALL_UPGRADES);
+    expect(poolForMode(GAME_MODES.predator)).toBe(MONSTER_UPGRADES);
+    const eligible = preyUpgradeCandidates(ALL_UPGRADES, levels({}));
+    expect(eligible.length).toBeGreaterThan(0);
+    const picked = pickPreyUpgrade(ALL_UPGRADES, levels({}), () => 0);
+    expect(picked).toBeDefined();
+    expect(ALL_UPGRADES).toContain(picked);
   });
 
   it('lands one free level every 30 seconds', () => {

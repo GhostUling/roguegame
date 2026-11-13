@@ -56,14 +56,29 @@ describe('game mode table', () => {
     expect(GAME_MODES.twin_link.threatScale).toBe(0);
   });
 
-  it('draws every mode but Overflow from the standard card table', () => {
+  it('draws every mode from its intended card table (overflow, monster, resonance, or standard)', () => {
     for (const [key, def] of Object.entries(GAME_MODES)) {
       if (key === 'overflow') {
         expect(def.cardPool).toBe('overflow');
+      } else if (key === 'predator') {
+        expect(def.cardPool).toBe('monster');
+      } else if (key === 'resonance') {
+        expect(def.cardPool).toBe('resonance');
       } else {
         expect(def.cardPool, key).toBe('standard');
       }
     }
+  });
+
+  it('configures resonance mode with ultra-dense swarms and amplified enemy durability', () => {
+    const res = GAME_MODES.resonance;
+    expect(res.spawnMultiplier).toBeGreaterThanOrEqual(3);
+    expect(res.growthScale).toBeGreaterThanOrEqual(2.5);
+    expect(res.threatScale).toBeGreaterThan(0);
+    expect(res.enemyHpMultiplier).toBeGreaterThanOrEqual(2.0);
+    expect(res.pilotSlots).toBe(1);
+    expect(res.wingSpacing).toBe(0);
+    expect(res.cardPool).toBe('resonance');
   });
 
   it('keeps the sandbox manual and hidden from production builds', () => {
@@ -105,6 +120,7 @@ describe('game mode table', () => {
     expect(modeOf('standard')).toBe(GAME_MODES.standard);
     expect(modeOf('twin_link')).toBe(GAME_MODES.twin_link);
     expect(modeOf('overflow')).toBe(GAME_MODES.overflow);
+    expect(modeOf('resonance')).toBe(GAME_MODES.resonance);
     expect(modeOf('sandbox')).toBe(GAME_MODES.sandbox);
     expect(modeOf('predator')).toBe(GAME_MODES.predator);
   });
@@ -138,6 +154,7 @@ describe('modeOfPlayer', () => {
     );
     expect(modeOfPlayer({ gameMode: 'sandbox' })).toBe(GAME_MODES.sandbox);
     expect(modeOfPlayer({ gameMode: 'predator' })).toBe(GAME_MODES.predator);
+    expect(modeOfPlayer({ gameMode: 'resonance' })).toBe(GAME_MODES.resonance);
   });
 });
 
@@ -151,5 +168,6 @@ describe('modeForPilots', () => {
     expect(modeForPilots('overflow')).toBe('overflow');
     expect(modeForPilots('overflow', 'zeta_aurora')).toBe('overflow');
     expect(modeForPilots('standard', 'zeta_aurora')).toBe('standard');
+    expect(modeForPilots('resonance')).toBe('resonance');
   });
 });
