@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import rendererSource from '../render/renderer.ts?raw';
+import { renderShockwaves, type RenderState } from '../render/renderer';
 
 /**
  * The renderer is the one layer nothing else can check: it needs a canvas, so no
@@ -72,5 +73,34 @@ describe('renderer wiring', () => {
     expect(playerShots).toBeGreaterThan(-1);
     expect(enemyShots).toBeLessThan(playerShots);
     expect(playerShots).toBeLessThan(hull);
+  });
+
+  it('skips negative, zero, and non-finite shockwave radii in renderShockwaves', () => {
+    const arcRadii: number[] = [];
+    const ctx = {
+      save: () => {},
+      restore: () => {},
+      beginPath: () => {},
+      stroke: () => {},
+      arc: (_x: number, _y: number, radius: number) => {
+        if (radius < 0) throw new DOMException('Negative radius', 'IndexSizeError');
+        arcRadii.push(radius);
+      },
+      strokeStyle: '#fff',
+      globalAlpha: 1,
+      lineWidth: 1,
+    } as unknown as CanvasRenderingContext2D;
+
+    const frame = {
+      shockwaves: [
+        { id: 1, x: 0, y: 0, radius: -25, maxRadius: 20, color: '#fbbf24', width: 2.5, life: 0.1, maxLife: 0.35 },
+        { id: 2, x: 0, y: 0, radius: 0, maxRadius: 20, color: '#fbbf24', width: 2.5, life: 0.1, maxLife: 0.35 },
+        { id: 3, x: 0, y: 0, radius: Number.NaN, maxRadius: 20, color: '#fbbf24', width: 2.5, life: 0.1, maxLife: 0.35 },
+        { id: 4, x: 10, y: 20, radius: 42, maxRadius: 120, color: '#38bdf8', width: 3, life: 0.1, maxLife: 0.4 },
+      ],
+    } as unknown as RenderState;
+
+    expect(() => renderShockwaves(ctx, frame)).not.toThrow();
+    expect(arcRadii).toEqual([42]);
   });
 });

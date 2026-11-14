@@ -204,4 +204,63 @@ describe('engine loop, headless', () => {
     expect(r.trace).toHaveLength(6);
     expect(new Set(r.lines).size, 'the world never changed').toBeGreaterThan(2);
   });
+
+  it('keeps shrinking shockwaves non-negative at 3x speed and resumes cleanly after pause', () => {
+    const harness = runHeadless({
+      character: 'alpha_prism',
+      gameMode: 'resonance',
+      seed: 19,
+      build: {
+        gaster_blasters: 3,
+        gate_of_babylon: 3,
+      },
+      setup: (engine) => {
+        engine.timeScale = 3;
+      },
+      watch: (engine) => {
+        for (const s of engine.shockwaves) {
+          expect(Number.isFinite(s.radius)).toBe(true);
+          expect(s.radius).toBeGreaterThanOrEqual(0);
+        }
+      },
+    });
+
+    try {
+      // Trigger Gaster + Babylon synergy and verify pause/resume cycle advances time cleanly
+      harness.step(90);
+
+      // Simulate an inward-shrinking gaster_babylon shockwave experiencing a lag frame at 3x speed (dt * 8 > 1)
+      harness.engine.shockwaves.push({
+        id: 999999,
+        x: harness.engine.player.x,
+        y: harness.engine.player.y,
+        radius: 180,
+        maxRadius: 20,
+        color: '#fbbf24',
+        width: 2.5,
+        life: 0,
+        maxLife: 0.35,
+      });
+      harness.engine.timeScale = 12; // dt = (1/60)*12 = 0.2 -> dt * 8 = 1.6 > 1
+      harness.step(5);
+      harness.engine.timeScale = 3;
+
+      const timeBeforePause = harness.engine.pulseAnimTime;
+      harness.engine.pauseGame();
+      expect(harness.engine.state).toBe('paused');
+
+      // While paused, stepping does not advance simulation even if a queued frame fires
+      harness.step(5);
+      expect(harness.engine.pulseAnimTime).toBe(timeBeforePause);
+
+      // Resuming schedules the next frame and continues simulation cleanly
+      harness.engine.resumeGame();
+      expect(harness.engine.state).toBe('playing');
+      expect(harness.engine.pulseAnimTime).toBe(timeBeforePause);
+      harness.step(30);
+      expect(harness.engine.pulseAnimTime).toBeGreaterThan(timeBeforePause);
+    } finally {
+      harness.restore();
+    }
+  });
 });

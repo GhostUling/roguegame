@@ -539,7 +539,7 @@ export class GameEngine {
     this.state = 'playing';
     this.lastTime = performance.now();
     cancelAnimationFrame(this.animFrameId);
-    this.loop(this.lastTime);
+    this.animFrameId = requestAnimationFrame(this.loop);
   }
 
   public pauseGame() {
@@ -931,14 +931,20 @@ export class GameEngine {
       return;
     }
 
-    const realDt = Math.min((timestamp - this.lastTime) / 1000, 0.08);
-    this.lastTime = timestamp;
+    const rawDelta = Number.isFinite(timestamp) ? (timestamp - this.lastTime) / 1000 : 0;
+    const realDt = Math.max(0, Math.min(rawDelta, 0.08));
+    this.lastTime = Number.isFinite(timestamp) ? timestamp : performance.now();
     const dt = realDt * this.timeScale;
 
-    this.update(dt);
-    this.render();
-
-    this.animFrameId = requestAnimationFrame(this.loop);
+    try {
+      this.update(dt);
+      this.render();
+    } finally {
+      if (this.state === 'playing') {
+        cancelAnimationFrame(this.animFrameId);
+        this.animFrameId = requestAnimationFrame(this.loop);
+      }
+    }
   };
 
   /* ========================================================================= */
@@ -6215,10 +6221,11 @@ export class GameEngine {
   }
 
   private updateShockwaves(dt: number) {
+    const step = Math.min(1, Math.max(0, dt * 8));
     for (let i = this.shockwaves.length - 1; i >= 0; i--) {
       const s = this.shockwaves[i];
       s.life += dt;
-      s.radius += (s.maxRadius - s.radius) * (dt * 8);
+      s.radius = Math.max(0, s.radius + (s.maxRadius - s.radius) * step);
       if (s.life >= s.maxLife) {
         this.shockwaves.splice(i, 1);
       }

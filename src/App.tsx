@@ -209,8 +209,8 @@ export default function App() {
 
   const resumeGame = useCallback(() => {
     if (engineRef.current && gameState === 'paused') {
-      engineRef.current.resumeGame();
       setGameState('playing');
+      engineRef.current.resumeGame();
     }
   }, [gameState]);
 
@@ -497,8 +497,8 @@ export default function App() {
 
       setUpgradeLevels({ ...p.upgradeLevels });
 
-      engineRef.current.resumeGame();
       setGameState('playing');
+      engineRef.current.resumeGame();
     },
     []
   );

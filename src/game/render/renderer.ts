@@ -638,11 +638,13 @@ export function renderVortices(ctx: CanvasRenderingContext2D, frame: RenderState
 
 export function renderShockwaves(ctx: CanvasRenderingContext2D, frame: RenderState) {
   for (const s of frame.shockwaves) {
-    const alpha = Math.max(0, 1 - s.life / s.maxLife);
+    if (!Number.isFinite(s.radius) || s.radius <= 0 || s.maxLife <= 0) continue;
+    const alpha = Math.max(0, Math.min(1, 1 - s.life / s.maxLife));
+    if (alpha <= 0) continue;
     ctx.save();
     ctx.strokeStyle = s.color;
     ctx.globalAlpha = alpha;
-    ctx.lineWidth = s.width * alpha;
+    ctx.lineWidth = Math.max(0.5, s.width * alpha);
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
     ctx.stroke();
@@ -1429,7 +1431,7 @@ export function renderGasterBlasters(ctx: CanvasRenderingContext2D, frame: Rende
           ctx.strokeStyle = '#bae6fd';
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.ellipse(r, 0, 6, currentWidth * 0.6, 0, 0, Math.PI * 2);
+          ctx.ellipse(r, 0, 6, Math.max(0.5, currentWidth * 0.6), 0, 0, Math.PI * 2);
           ctx.stroke();
         }
 
